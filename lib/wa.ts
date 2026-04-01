@@ -14,7 +14,13 @@ function normalizeWhatsappTarget(value: string) {
   return typeof value === "string" ? value.trim() : "";
 }
 
-export async function sendWA(to: string, message: string) {
+export type SendWAResult = {
+  sentPayload: Record<string, unknown>;
+  apiResponse: unknown;
+  httpStatus: number;
+};
+
+export async function sendWA(to: string, message: string): Promise<SendWAResult> {
   const settings = await readSettings();
 
   if (!settings.waApiUrl || !settings.waSessionId || !settings.waToken) {
@@ -27,29 +33,47 @@ export async function sendWA(to: string, message: string) {
     throw new Error("Recipient number is invalid.");
   }
 
-  const response = await fetch(
-    `${settings.waApiUrl}/messages?sessionId=${encodeURIComponent(settings.waSessionId)}`,
-    {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${settings.waToken}`
-      },
-      body: JSON.stringify({
-        to: normalizedTo,
-        type: "text",
-        text: { body: message }
-      }),
-      signal: AbortSignal.timeout(25000)
-    }
-  );
+  const sentPayload = {
+    to: normalizedTo,
+    type: "text",
+    text: { body: message }
+  };
 
-  if (!response.ok) {
-    const detail = await response.text();
-    throw new Error(`WA send failed (${response.status}): ${detail}`);
+  const url = `${settings.waApiUrl}/messages?sessionId=${encodeURIComponent(settings.waSessionId)}`;
+
+  const response = await fetch(url, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${settings.waToken}`
+    },
+    body: JSON.stringify(sentPayload),
+    signal: AbortSignal.timeout(25000)
+  });
+
+  let detail = "";
+  let data: any = null;
+
+  try {
+    detail = await response.text();
+    data = JSON.parse(detail);
+  } catch {
+    // raw text
   }
 
-  return response.json();
+  if (!response.ok) {
+    throw new Error(`WA send HTTP ${response.status}: ${detail}`);
+  }
+
+  if (data && (data.status === false || data.error)) {
+    throw new Error(`WA send API error: ${detail}`);
+  }
+
+  return {
+    sentPayload,
+    apiResponse: data ?? detail,
+    httpStatus: response.status
+  };
 }
 
 export function extractWebhookPayload(body: any) {

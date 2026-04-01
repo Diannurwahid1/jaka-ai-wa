@@ -87,7 +87,7 @@ export async function POST(request: NextRequest) {
       remember: true
     });
 
-    await sendWA(from, aiReply);
+    const sendResult = await sendWA(from, aiReply);
 
     await updateMessage(log.id, {
       reply: aiReply,
@@ -98,10 +98,10 @@ export async function POST(request: NextRequest) {
       stage: "processed",
       from,
       message,
-      reason: `Message logged with id ${log.id}`
+      reason: `Sent to WA. HTTP ${sendResult.httpStatus}. Payload: ${JSON.stringify(sendResult.sentPayload)}. Response: ${JSON.stringify(sendResult.apiResponse)}`
     });
 
-    return NextResponse.json({ ok: true, reply: aiReply });
+    return NextResponse.json({ ok: true, reply: aiReply, sendResult });
   } catch (error) {
     const reason = error instanceof Error ? error.message : "Unknown error";
 
