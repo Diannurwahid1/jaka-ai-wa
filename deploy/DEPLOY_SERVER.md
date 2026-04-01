@@ -4,7 +4,7 @@ Target:
 
 - app path: `/var/www/jaka-ai-wa`
 - process manager: `pm2`
-- app port: `6668`
+- app port: `3010`
 - domain: `jakacs.arahdigital.id`
 
 ## 1. Install base packages
@@ -129,7 +129,7 @@ Check:
 ```bash
 pm2 status
 pm2 logs wa-ai-control-center
-curl http://127.0.0.1:6668
+curl http://127.0.0.1:3010
 ```
 
 ## 7. Configure nginx
