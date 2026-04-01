@@ -428,6 +428,20 @@ npm run build
 pm2 start ecosystem.config.cjs
 ```
 
+Buat user dan database PostgreSQL khusus project:
+
+```sql
+CREATE USER wa_ai_app WITH PASSWORD 'ganti-password-yang-kuat';
+CREATE DATABASE wa_ai_control_center OWNER wa_ai_app;
+GRANT ALL PRIVILEGES ON DATABASE wa_ai_control_center TO wa_ai_app;
+```
+
+Contoh `DATABASE_URL`:
+
+```env
+DATABASE_URL="postgresql://wa_ai_app:ganti-password-yang-kuat@127.0.0.1:5432/wa_ai_control_center?schema=public"
+```
+
 Lalu arahkan nginx ke:
 
 ```txt

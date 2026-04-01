@@ -30,7 +30,38 @@ git clone https://github.com/Diannurwahid1/jaka-ai-wa.git
 cd jaka-ai-wa
 ```
 
-## 3. Create production env
+## 3. Create PostgreSQL user and database
+
+Install PostgreSQL if needed:
+
+```bash
+sudo apt install -y postgresql postgresql-contrib
+sudo systemctl enable postgresql
+sudo systemctl start postgresql
+```
+
+Open PostgreSQL shell:
+
+```bash
+sudo -u postgres psql
+```
+
+Create dedicated user and database:
+
+```sql
+CREATE USER wa_ai_app WITH PASSWORD 'ganti-password-yang-kuat';
+CREATE DATABASE wa_ai_control_center OWNER wa_ai_app;
+GRANT ALL PRIVILEGES ON DATABASE wa_ai_control_center TO wa_ai_app;
+\q
+```
+
+Optional quick check:
+
+```bash
+psql "postgresql://wa_ai_app:ganti-password-yang-kuat@127.0.0.1:5432/wa_ai_control_center?schema=public" -c "\dt"
+```
+
+## 4. Create production env
 
 Create `.env.production`:
 
@@ -41,7 +72,7 @@ nano .env.production
 Example:
 
 ```env
-DATABASE_URL="postgresql://USER:PASSWORD@HOST:5432/DBNAME?schema=public"
+DATABASE_URL="postgresql://wa_ai_app:ganti-password-yang-kuat@127.0.0.1:5432/wa_ai_control_center?schema=public"
 
 AUTH_SECRET="replace-with-long-random-secret"
 ADMIN_EMAIL="admin@wa-ai.local"
@@ -68,7 +99,7 @@ EMBEDDING_DIMENSIONS="1024"
 EMBEDDING_BASE_URL="https://ai.mongodb.com/v1"
 ```
 
-## 4. Install and build
+## 5. Install and build
 
 ```bash
 npm install
@@ -77,7 +108,7 @@ npx prisma db push
 npm run build
 ```
 
-## 5. Start with PM2
+## 6. Start with PM2
 
 Copy env file for runtime:
 
@@ -101,7 +132,7 @@ pm2 logs wa-ai-control-center
 curl http://127.0.0.1:6666
 ```
 
-## 6. Configure nginx
+## 7. Configure nginx
 
 Copy nginx config:
 
@@ -112,7 +143,7 @@ sudo nginx -t
 sudo systemctl reload nginx
 ```
 
-## 7. Point domain
+## 8. Point domain
 
 At DNS provider:
 
@@ -126,14 +157,14 @@ Wait until DNS resolves:
 ping jakacs.arahdigital.id
 ```
 
-## 8. Enable HTTPS with Certbot
+## 9. Enable HTTPS with Certbot
 
 ```bash
 sudo apt install -y certbot python3-certbot-nginx
 sudo certbot --nginx -d jakacs.arahdigital.id
 ```
 
-## 9. Update WA webhook
+## 10. Update WA webhook
 
 Set WA Blast webhook to:
 
@@ -141,7 +172,7 @@ Set WA Blast webhook to:
 https://jakacs.arahdigital.id/api/webhook/wa
 ```
 
-## 10. Deploy updates
+## 11. Deploy updates
 
 ```bash
 cd /var/www/jaka-ai-wa
