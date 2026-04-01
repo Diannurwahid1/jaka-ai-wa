@@ -11,8 +11,7 @@ function firstString(...values: unknown[]) {
 }
 
 function normalizeWhatsappTarget(value: string) {
-  const withoutMeta = value.split(":")[0]?.split("@")[0]?.trim() ?? "";
-  return withoutMeta.replace(/[^\d]/g, "");
+  return typeof value === "string" ? value.trim() : "";
 }
 
 export async function sendWA(to: string, message: string) {
