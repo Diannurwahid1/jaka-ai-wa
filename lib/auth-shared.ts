@@ -32,8 +32,13 @@ export function isSameOrigin(request: NextRequest) {
 
   try {
     const originUrl = new URL(origin);
+    const forwardedHost = request.headers.get("x-forwarded-host");
+    const forwardedProto = request.headers.get("x-forwarded-proto");
     const requestUrl = new URL(request.url);
-    return originUrl.host === requestUrl.host && originUrl.protocol === requestUrl.protocol;
+    const effectiveHost = forwardedHost || requestUrl.host;
+    const effectiveProtocol = forwardedProto ? `${forwardedProto}:` : requestUrl.protocol;
+
+    return originUrl.host === effectiveHost && originUrl.protocol === effectiveProtocol;
   } catch {
     return false;
   }
