@@ -1,0 +1,19 @@
+{
+  "aiApiUrl": "https://ai.sumopod.com/v1/chat/completions",
+  "aiApiKey": "",
+  "aiModel": "seed-2-0-pro",
+  "promptSystem": "Kamu adalah AI WhatsApp untuk bisnis.\n\nTugas kamu:\n- Menjawab pertanyaan customer\n- Memberikan info produk / layanan\n- Membantu closing ringan\n\nStyle:\n- Ramah, cepat, to the point\n- Tidak terlalu panjang\n- Gunakan emoji secukupnya\n- Bahasa Indonesia santai profesional\n\nJika tidak tahu:\n-> arahkan ke admin\n\nJika ditanya harga:\n-> jawab + ajak lanjut.",
+  "waApiUrl": "https://waflash.citradigitalhotel.it.com/api/v1",
+  "waSessionId": "alphaprod",
+  "waToken": "",
+  "waMasterKey": "",
+  "mongodbUri": "",
+  "mongodbDb": "wa_ai",
+  "ragCollection": "knowledge",
+  "ragIndexName": "vector_index",
+  "embeddingProvider": "openai",
+  "embeddingApiKey": "",
+  "embeddingModel": "text-embedding-3-small",
+  "embeddingDimensions": "1536",
+  "embeddingBaseUrl": ""
+}

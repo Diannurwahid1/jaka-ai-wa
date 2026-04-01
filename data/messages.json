@@ -1,0 +1,53 @@
+[
+  {
+    "id": "ae6b8988-592d-4309-81da-583e846ff6df",
+    "createdAt": "2026-04-01T03:45:29.665Z",
+    "from": "628111222333",
+    "message": "berapa harganya?",
+    "reply": "Halo! ✨\nPaket Premium kami harganya **Rp 149.000 / bulan** ya.\nKamu dapat semua fitur penuh, tanpa batas upload, dan support prioritas 24 jam.\n\nMau saya bantu proses aktivasi sekarang? Atau mau dijelaskan lebih lanjut dulu? 😊",
+    "source": "manual",
+    "status": "success",
+    "intent": "question"
+  },
+  {
+    "id": "249cf4e2-90ef-445c-896b-4e34fa4024b4",
+    "createdAt": "2026-04-01T03:41:41.807Z",
+    "from": "manual-chat",
+    "message": "anjing lu",
+    "reply": "Maaf ya kak apabila ada hal yang membuat kamu tidak nyaman 😔\nSilahkan sampaikan keluhan atau kebutuhan kamu dengan baik, kita siap bantu sebisa mungkin ya.",
+    "source": "manual",
+    "status": "success",
+    "intent": "general"
+  },
+  {
+    "id": "350c89a5-0b9c-4466-93fb-f50c164e087e",
+    "createdAt": "2026-04-01T03:36:03.722Z",
+    "from": "6281234567890",
+    "message": "halo dari webhook",
+    "reply": "Halo! 👋 Selamat datang ya. Ada yang bisa saya bantu hari ini? Bisa tanya produk, cek stok, harga atau apapun yang kamu butuhkan 😊",
+    "source": "webhook",
+    "status": "success",
+    "intent": "general"
+  },
+  {
+    "id": "08c72cc1-866f-4b78-9631-66c8242750ae",
+    "createdAt": "2026-04-01T03:31:37.845Z",
+    "from": "manual-chat",
+    "message": "halo",
+    "reply": "Halo! 👋 Ada yang bisa saya bantu hari ini?\nBisa tanya tentang produk, cek harga, atau info layanan kami ya 😊",
+    "source": "manual",
+    "status": "success",
+    "intent": "general"
+  },
+  {
+    "id": "b8d558b0-e7ea-4f89-9e4b-29b5c2583b9f",
+    "createdAt": "2026-04-01T03:29:23.066Z",
+    "from": "manual-chat",
+    "message": "halo",
+    "reply": "",
+    "source": "manual",
+    "status": "failed",
+    "intent": "general",
+    "error": "AI configuration is incomplete."
+  }
+]

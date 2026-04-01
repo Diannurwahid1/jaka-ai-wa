@@ -1,0 +1,90 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model AppConfig {
+  id                  Int      @id
+  aiApiUrl            String
+  aiApiKey            String
+  aiModel             String
+  promptSystem        String   @db.Text
+  waApiUrl            String
+  waSessionId         String
+  waToken             String
+  waMasterKey         String
+  mongodbUri          String
+  mongodbDb           String
+  ragCollection       String
+  ragIndexName        String
+  embeddingProvider   String
+  embeddingApiKey     String
+  embeddingModel      String
+  embeddingDimensions String
+  embeddingBaseUrl    String
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+}
+
+model AdminUser {
+  id           String   @id @default(uuid())
+  email        String   @unique
+  passwordHash String
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
+
+model MessageLog {
+  id        String   @id @default(uuid())
+  fromPhone String
+  message   String   @db.Text
+  reply     String   @db.Text
+  source    String
+  status    String
+  intent    String
+  createdAt DateTime @default(now())
+  error     String?  @db.Text
+
+  @@index([createdAt])
+  @@index([fromPhone])
+}
+
+model MemorySession {
+  phone      String          @id
+  summary    String          @default("") @db.Text
+  lastActive DateTime
+  createdAt  DateTime        @default(now())
+  updatedAt  DateTime        @updatedAt
+  messages   MemoryMessage[]
+
+  @@index([lastActive])
+}
+
+model MemoryMessage {
+  id        String        @id @default(uuid())
+  phone     String
+  role      String
+  content   String        @db.Text
+  createdAt DateTime      @default(now())
+  session   MemorySession @relation(fields: [phone], references: [phone], onDelete: Cascade)
+
+  @@index([phone, createdAt])
+}
+
+model WebhookEvent {
+  id        String   @id @default(uuid())
+  createdAt DateTime @default(now())
+  stage     String
+  fromPhone String?
+  message   String?  @db.Text
+  reason    String?  @db.Text
+  payload   Json?
+  rawBody   String?  @db.Text
+  headers   Json?
+
+  @@index([createdAt])
+  @@index([stage])
+}

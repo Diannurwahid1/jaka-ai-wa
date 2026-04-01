@@ -1,0 +1,28 @@
+[
+  {
+    "id": "dea55df3-67d6-430d-8507-c7ed86bb7638",
+    "createdAt": "2026-04-01T03:36:07.451Z",
+    "stage": "processed",
+    "from": "6281234567890",
+    "message": "halo dari webhook",
+    "reason": "Message logged with id 350c89a5-0b9c-4466-93fb-f50c164e087e"
+  },
+  {
+    "id": "70c11820-1c69-4da5-a116-cbb9e5a926a5",
+    "createdAt": "2026-04-01T03:36:03.704Z",
+    "stage": "received",
+    "from": "6281234567890",
+    "message": "halo dari webhook",
+    "payload": {
+      "message": {
+        "text": "halo dari webhook"
+      },
+      "from": "6281234567890@s.whatsapp.net"
+    },
+    "headers": {
+      "content-type": "application/json",
+      "user-agent": "Mozilla/5.0 (Windows NT; Windows NT 10.0; id-ID) WindowsPowerShell/5.1.26100.7920",
+      "x-forwarded-for": "::1"
+    }
+  }
+]
