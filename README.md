@@ -407,7 +407,7 @@ npm run lint
 Target production yang sudah disiapkan di repo ini:
 
 - domain: `jakacs.arahdigital.id`
-- app port: `6666`
+- app port: `6668`
 - process manager: `pm2`
 
 File deploy yang sudah tersedia:
@@ -445,7 +445,7 @@ DATABASE_URL="postgresql://wa_ai_app:ganti-password-yang-kuat@127.0.0.1:5432/wa_
 Lalu arahkan nginx ke:
 
 ```txt
-http://127.0.0.1:6666
+http://127.0.0.1:6668
 ```
 
 Dan update webhook WA Blast ke:

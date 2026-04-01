@@ -4,10 +4,10 @@ module.exports = {
       name: "wa-ai-control-center",
       cwd: "/var/www/jaka-ai-wa",
       script: "node_modules/next/dist/bin/next",
-      args: "start -p 6666",
+      args: "start -p 6668",
       env: {
         NODE_ENV: "production",
-        PORT: "6666"
+        PORT: "6668"
       },
       instances: 1,
       exec_mode: "fork",
