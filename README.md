@@ -402,6 +402,44 @@ npx tsc --noEmit
 npm run lint
 ```
 
+## Production Deploy
+
+Target production yang sudah disiapkan di repo ini:
+
+- domain: `jakacs.arahdigital.id`
+- app port: `6666`
+- process manager: `pm2`
+
+File deploy yang sudah tersedia:
+
+- [ecosystem.config.cjs](/D:/wa-ai/ecosystem.config.cjs)
+- [deploy/nginx-jakacs.arahdigital.id.conf](/D:/wa-ai/deploy/nginx-jakacs.arahdigital.id.conf)
+- [deploy/DEPLOY_SERVER.md](/D:/wa-ai/deploy/DEPLOY_SERVER.md)
+
+Ringkasan langkah:
+
+```bash
+git clone https://github.com/Diannurwahid1/jaka-ai-wa.git
+cd jaka-ai-wa
+npm install
+npx prisma generate
+npx prisma db push
+npm run build
+pm2 start ecosystem.config.cjs
+```
+
+Lalu arahkan nginx ke:
+
+```txt
+http://127.0.0.1:6666
+```
+
+Dan update webhook WA Blast ke:
+
+```txt
+https://jakacs.arahdigital.id/api/webhook/wa
+```
+
 ## License
 
 Gunakan project ini sesuai kebutuhan internal atau pengembangan lanjutan Anda.
