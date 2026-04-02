@@ -156,7 +156,7 @@ export function SettingsClient() {
   const [security, setSecurity] = useState<{
     email: string | null;
     hasAdmin: boolean;
-    usesDefaultCredentials: boolean;
+    passwordSource: "database";
     hasCustomPassword: boolean;
   } | null>(null);
   const [passwordForm, setPasswordForm] = useState({
@@ -576,21 +576,21 @@ export function SettingsClient() {
         <section className="rounded-[32px] border border-slate-200/60 bg-white p-6 shadow-panel">
           <div className="mb-5">
             <h3 className="text-lg font-semibold text-slate-950">Admin Security</h3>
-            <p className="mt-1 text-sm text-slate-500">Kelola password admin dan cek apakah kredensial default masih dipakai.</p>
+            <p className="mt-1 text-sm text-slate-500">Kelola password admin. Password aktif selalu dibaca dari database aplikasi.</p>
           </div>
 
           <div
             className={`rounded-3xl p-4 text-sm leading-6 ${
-              security?.usesDefaultCredentials
-                ? "bg-amber-50 text-amber-800"
-                : "bg-emerald-50 text-emerald-800"
+              security?.hasAdmin
+                ? "bg-emerald-50 text-emerald-800"
+                : "bg-amber-50 text-amber-800"
             }`}
           >
             {securityLoading
               ? "Memeriksa status keamanan admin..."
-              : security?.usesDefaultCredentials
-                ? "Password admin masih memakai kredensial default dari environment. Ganti sekarang sebelum aplikasi dipublikasikan."
-                : `Admin aktif: ${security?.email ?? "-"} . Password kustom sudah dipakai.`}
+              : security?.hasAdmin
+                ? `Admin aktif: ${security?.email ?? "-"}. Password login diambil dari database.`
+                : "Belum ada user admin di database."}
           </div>
 
           <form onSubmit={handlePasswordSubmit} className="mt-6 grid gap-4 xl:grid-cols-[1fr_1fr_1fr_auto]">

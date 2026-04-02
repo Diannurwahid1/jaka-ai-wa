@@ -16,8 +16,9 @@ const loginAttempts = new Map<string, { count: number; expiresAt: number }>();
 
 const adminUsers = prisma as typeof prisma & {
   adminUser: {
-    count: () => Promise<number>;
-    create: (args: { data: { email: string; passwordHash: string } }) => Promise<{ id: string; email: string; passwordHash: string }>;
+    findFirst: (args: {
+      orderBy: { createdAt: "asc" | "desc" };
+    }) => Promise<{ id: string; email: string; passwordHash: string } | null>;
     findUnique: (args: { where: { email: string } }) => Promise<{ id: string; email: string; passwordHash: string } | null>;
     update: (args: {
       where: { id: string };
@@ -29,7 +30,7 @@ const adminUsers = prisma as typeof prisma & {
 export type AdminSecurityState = {
   email: string | null;
   hasAdmin: boolean;
-  usesDefaultCredentials: boolean;
+  passwordSource: "database";
   hasCustomPassword: boolean;
 };
 
@@ -46,33 +47,7 @@ function getClientIp(request: NextRequest) {
   );
 }
 
-export async function ensureAdminSeeded() {
-  const existingCount = await adminUsers.adminUser.count();
-
-  if (existingCount > 0) {
-    return;
-  }
-
-  const email = process.env.ADMIN_EMAIL?.trim();
-  const password = process.env.ADMIN_PASSWORD?.trim();
-
-  if (!email || !password) {
-    return;
-  }
-
-  const passwordHash = await hash(password, 12);
-
-  await adminUsers.adminUser.create({
-    data: {
-      email: email.toLowerCase(),
-      passwordHash
-    }
-  });
-}
-
 export async function authenticateAdmin(email: string, password: string) {
-  await ensureAdminSeeded();
-
   const user = await adminUsers.adminUser.findUnique({
     where: { email: email.trim().toLowerCase() }
   });
@@ -91,42 +66,24 @@ export async function authenticateAdmin(email: string, password: string) {
 }
 
 export async function getAdminSecurityState(): Promise<AdminSecurityState> {
-  await ensureAdminSeeded();
-
-  const email = process.env.ADMIN_EMAIL?.trim().toLowerCase();
-  const defaultPassword = process.env.ADMIN_PASSWORD?.trim();
-
-  if (!email) {
-    return {
-      email: null,
-      hasAdmin: false,
-      usesDefaultCredentials: false,
-      hasCustomPassword: false
-    };
-  }
-
-  const user = await adminUsers.adminUser.findUnique({
-    where: { email }
+  const user = await adminUsers.adminUser.findFirst({
+    orderBy: { createdAt: "asc" }
   });
 
   if (!user) {
     return {
-      email,
+      email: null,
       hasAdmin: false,
-      usesDefaultCredentials: false,
+      passwordSource: "database",
       hasCustomPassword: false
     };
   }
 
-  const usesDefaultCredentials = defaultPassword
-    ? await compare(defaultPassword, user.passwordHash)
-    : false;
-
   return {
     email: user.email,
     hasAdmin: true,
-    usesDefaultCredentials,
-    hasCustomPassword: !usesDefaultCredentials
+    passwordSource: "database",
+    hasCustomPassword: true
   };
 }
 
