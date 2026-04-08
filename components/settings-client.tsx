@@ -24,7 +24,42 @@ const initialSettings: AppSettings = {
   embeddingApiKey: "",
   embeddingModel: "voyage-4-large",
   embeddingDimensions: "1024",
-  embeddingBaseUrl: "https://ai.mongodb.com/v1"
+  embeddingBaseUrl: "https://ai.mongodb.com/v1",
+  bytePlusApiKey: "",
+  bytePlusBaseUrl: "https://ark.ap-southeast.bytepluses.com/api/v3",
+  bytePlusImageModel: "seedream-4-5-251128",
+  topicScoutSearchApiKey: "",
+  topicScoutSearchUrl: "https://search.infoquest.bytepluses.com",
+  topicScoutModelApiKey: "",
+  topicScoutModelBaseUrl: "https://ark.ap-southeast.bytepluses.com/api/v3",
+  topicScoutModel: "seed-2-0-mini-260215",
+  topicScoutDefaultQuery: "tren terbaru hotel indonesia direct booking OTA website hotel AI customer service hospitality marketing",
+  metaAppId: "",
+  metaAppSecret: "",
+  metaGraphVersion: "v23.0",
+  metaFacebookPageId: "",
+  metaFacebookPageName: "",
+  metaInstagramBusinessId: "",
+  metaInstagramUsername: "",
+  metaPageAccessToken: "",
+  metaPageTokenExpiresAt: "",
+  threadsUserId: "",
+  threadsUsername: "",
+  threadsAccessToken: "",
+  threadsTokenExpiresAt: "",
+  threadsApiVersion: "v1.0",
+  threadsApiBaseUrl: "https://graph.threads.net",
+  linkedinClientId: "",
+  linkedinClientSecret: "",
+  linkedinRedirectUri: "",
+  linkedinAccessToken: "",
+  linkedinRefreshToken: "",
+  linkedinTokenExpiresAt: "",
+  linkedinAuthorUrn: "",
+  linkedinOrganizationUrn: "",
+  linkedinApiVersion: "202504",
+  autoPostEnabled: false,
+  schedulerSecret: ""
 };
 
 const voyageDimensionMap: Record<string, number[]> = {
@@ -77,6 +112,33 @@ function InputField({
         placeholder={placeholder}
         className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900"
       />
+    </label>
+  );
+}
+
+function CheckboxField({
+  label,
+  checked,
+  onChange,
+  description
+}: {
+  label: string;
+  checked: boolean;
+  onChange: (nextValue: boolean) => void;
+  description: string;
+}) {
+  return (
+    <label className="flex items-start gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">
+      <input
+        type="checkbox"
+        checked={checked}
+        onChange={(event) => onChange(event.target.checked)}
+        className="mt-1"
+      />
+      <span>
+        <span className="block font-medium text-slate-900">{label}</span>
+        <span className="mt-1 block leading-6 text-slate-600">{description}</span>
+      </span>
     </label>
   );
 }
@@ -151,6 +213,13 @@ export function SettingsClient() {
   const [loading, setLoading] = useState(true);
   const [testingEmbedding, setTestingEmbedding] = useState(false);
   const [embeddingTestResult, setEmbeddingTestResult] = useState<string | null>(null);
+  const [testingMeta, setTestingMeta] = useState(false);
+  const [testingThreads, setTestingThreads] = useState(false);
+  const [testingLinkedIn, setTestingLinkedIn] = useState(false);
+  const [runningPublisher, setRunningPublisher] = useState(false);
+  const [metaTestResult, setMetaTestResult] = useState<string | null>(null);
+  const [threadsTestResult, setThreadsTestResult] = useState<string | null>(null);
+  const [linkedinTestResult, setLinkedinTestResult] = useState<string | null>(null);
   const [securityLoading, setSecurityLoading] = useState(true);
   const [securitySaving, setSecuritySaving] = useState(false);
   const [security, setSecurity] = useState<{
@@ -223,30 +292,7 @@ export function SettingsClient() {
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    setSaving(true);
-
-    try {
-      const response = await fetch("/api/settings", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(settings)
-      });
-      const payload = await response.json();
-
-      if (!response.ok || !payload.ok) {
-        throw new Error(payload.reason || "Gagal menyimpan settings");
-      }
-
-      setSettings(payload.settings);
-      pushToast({ title: "Settings berhasil disimpan", tone: "success" });
-    } catch (error) {
-      pushToast({
-        title: error instanceof Error ? error.message : "Gagal menyimpan settings",
-        tone: "error"
-      });
-    } finally {
-      setSaving(false);
-    }
+    await persistSettings({ notify: true });
   }
 
   async function handlePasswordSubmit(event: FormEvent<HTMLFormElement>) {
@@ -335,6 +381,169 @@ export function SettingsClient() {
       pushToast({ title: message, tone: "error" });
     } finally {
       setTestingEmbedding(false);
+    }
+  }
+
+  async function handleTestMetaConnection() {
+    setTestingMeta(true);
+    setMetaTestResult(null);
+
+    try {
+      await persistSettings();
+      const response = await fetch("/api/social/meta/test", { method: "POST" });
+      const payload = await response.json();
+
+      if (!response.ok || !payload.ok) {
+        throw new Error(payload.reason || "Gagal mengetes koneksi Meta");
+      }
+
+      const details = payload.result?.details ?? {};
+      const summary = `${payload.result?.summary || "Meta tersambung"} Page: ${String(details.pageName ?? details.pageId ?? "-")}${details.instagramUsername ? ` | Instagram: @${String(details.instagramUsername)}` : ""}`;
+      setMetaTestResult(summary);
+      pushToast({ title: "Koneksi Meta valid", tone: "success" });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Gagal mengetes koneksi Meta";
+      setMetaTestResult(message);
+      pushToast({ title: message, tone: "error" });
+    } finally {
+      setTestingMeta(false);
+    }
+  }
+
+  async function handleTestLinkedInConnection() {
+    setTestingLinkedIn(true);
+    setLinkedinTestResult(null);
+
+    try {
+      await persistSettings();
+      const response = await fetch("/api/social/linkedin/test", { method: "POST" });
+      const payload = await response.json();
+
+      if (!response.ok || !payload.ok) {
+        throw new Error(payload.reason || "Gagal mengetes koneksi LinkedIn");
+      }
+
+      setLinkedinTestResult(String(payload.result?.summary || "LinkedIn connected"));
+      pushToast({ title: "Koneksi LinkedIn valid", tone: "success" });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Gagal mengetes koneksi LinkedIn";
+      setLinkedinTestResult(message);
+      pushToast({ title: message, tone: "error" });
+    } finally {
+      setTestingLinkedIn(false);
+    }
+  }
+
+  async function handleTestThreadsConnection() {
+    setTestingThreads(true);
+    setThreadsTestResult(null);
+
+    try {
+      await persistSettings();
+      const response = await fetch("/api/social/threads/test", { method: "POST" });
+      const payload = await response.json();
+
+      if (!response.ok || !payload.ok) {
+        throw new Error(payload.reason || "Gagal mengetes koneksi Threads");
+      }
+
+      const details = payload.result?.details ?? {};
+      const summary = `${payload.result?.summary || "Threads connected"} User: ${String(details.username ?? details.id ?? "-")}`;
+      setThreadsTestResult(summary);
+      pushToast({ title: "Koneksi Threads valid", tone: "success" });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Gagal mengetes koneksi Threads";
+      setThreadsTestResult(message);
+      pushToast({ title: message, tone: "error" });
+    } finally {
+      setTestingThreads(false);
+    }
+  }
+
+  async function handleConnectLinkedIn() {
+    try {
+      await persistSettings();
+      const response = await fetch("/api/social/linkedin/auth-url", { method: "POST" });
+      const payload = await response.json();
+
+      if (!response.ok || !payload.ok || !payload.url) {
+        throw new Error(payload.reason || "Gagal membuat LinkedIn OAuth URL");
+      }
+
+      window.location.href = String(payload.url);
+    } catch (error) {
+      pushToast({
+        title: error instanceof Error ? error.message : "Gagal membuka LinkedIn OAuth",
+        tone: "error"
+      });
+    }
+  }
+
+  async function handleRunPublisher() {
+    setRunningPublisher(true);
+
+    try {
+      const response = await fetch("/api/creator/publish", { method: "POST" });
+      const payload = await response.json();
+
+      if (!response.ok || !payload.ok) {
+        throw new Error(payload.reason || "Gagal menjalankan scheduler publisher");
+      }
+
+      const result = payload.result as {
+        processed: number;
+        posted: number;
+        failed: number;
+        reason?: string;
+      };
+
+      pushToast({
+        title: result.reason || `Publisher jalan. Posted ${result.posted}, failed ${result.failed}.`,
+        tone: result.failed > 0 ? "error" : "success"
+      });
+    } catch (error) {
+      pushToast({
+        title: error instanceof Error ? error.message : "Gagal menjalankan scheduler publisher",
+        tone: "error"
+      });
+    } finally {
+      setRunningPublisher(false);
+    }
+  }
+
+  async function persistSettings(options?: { notify?: boolean }) {
+    setSaving(true);
+
+    try {
+      const response = await fetch("/api/settings", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(settings)
+      });
+      const payload = await response.json();
+
+      if (!response.ok || !payload.ok) {
+        throw new Error(payload.reason || "Gagal menyimpan settings");
+      }
+
+      setSettings(payload.settings);
+
+      if (options?.notify) {
+        pushToast({ title: "Settings berhasil disimpan", tone: "success" });
+      }
+
+      return payload.settings as AppSettings;
+    } catch (error) {
+      if (options?.notify) {
+        pushToast({
+          title: error instanceof Error ? error.message : "Gagal menyimpan settings",
+          tone: "error"
+        });
+      }
+
+      throw error;
+    } finally {
+      setSaving(false);
     }
   }
 
@@ -430,9 +639,14 @@ export function SettingsClient() {
                 onChange={(nextValue) =>
                   setSettings((current) => ({ ...current, waMasterKey: nextValue }))
                 }
-                placeholder="Optional atau berdasarkan gateway"
+                placeholder="Secret untuk validasi webhook WA"
                 type="password"
               />
+              <div className="rounded-2xl bg-slate-50 px-4 py-3 text-sm leading-6 text-slate-600">
+                Dipakai untuk memvalidasi request masuk ke <span className="font-medium text-slate-900">/api/webhook/wa</span>.
+                Gateway WA sebaiknya mengirim secret ini lewat header seperti <span className="font-medium text-slate-900">Authorization</span>,
+                <span className="font-medium text-slate-900"> x-signature</span>, atau <span className="font-medium text-slate-900">x-wa-master-key</span>.
+              </div>
             </div>
           </section>
         </div>
@@ -555,6 +769,342 @@ export function SettingsClient() {
               </div>
             </div>
           </section>
+
+          <section className="rounded-[32px] border border-slate-200/60 bg-white p-6 shadow-panel">
+            <div className="mb-5">
+              <h3 className="text-lg font-semibold text-slate-950">BytePlus Config</h3>
+              <p className="mt-1 text-sm text-slate-500">
+                Dipakai oleh Jaka Creator untuk image generation Instagram, LinkedIn, dan Facebook. Field ini harus berisi model image BytePlus seperti Seedream atau SeedEdit, bukan model response/chat seperti seed-2.
+              </p>
+            </div>
+
+            <div className="space-y-4">
+              <InputField
+                label="BytePlus API Key"
+                value={settings.bytePlusApiKey}
+                onChange={(nextValue) => setSettings((current) => ({ ...current, bytePlusApiKey: nextValue }))}
+                placeholder="ARK API key"
+                type="password"
+              />
+              <InputField
+                label="BytePlus Base URL"
+                value={settings.bytePlusBaseUrl}
+                onChange={(nextValue) => setSettings((current) => ({ ...current, bytePlusBaseUrl: nextValue }))}
+                placeholder="https://ark.ap-southeast.bytepluses.com/api/v3"
+              />
+              <InputField
+                label="BytePlus Image Model"
+                value={settings.bytePlusImageModel}
+                onChange={(nextValue) => setSettings((current) => ({ ...current, bytePlusImageModel: nextValue }))}
+                placeholder="seedream-4-5-251128"
+              />
+              <div className="rounded-2xl bg-amber-50 px-4 py-3 text-sm leading-6 text-amber-900">
+                Contoh valid untuk image generation: <span className="font-medium">seedream-4-5-251128</span> atau{" "}
+                <span className="font-medium">seededit-3-0-i2i-250628</span>. Model seperti{" "}
+                <span className="font-medium">seed-2-0-pro-260328</span> hanya cocok untuk responses/chat dan akan ditolak oleh endpoint gambar.
+              </div>
+            </div>
+          </section>
+
+          <section className="rounded-[32px] border border-slate-200/60 bg-white p-6 shadow-panel">
+            <div className="mb-5">
+              <h3 className="text-lg font-semibold text-slate-950">Topic Scout Config</h3>
+              <p className="mt-1 text-sm text-slate-500">
+                Worker pencari topik dinamis. Search API dipakai khusus untuk web search, lalu model API dipakai untuk merangkum hasil search menjadi brief konten yang disimpan ke Mongo.
+              </p>
+            </div>
+
+            <div className="space-y-4">
+              <InputField
+                label="Search API Key"
+                value={settings.topicScoutSearchApiKey}
+                onChange={(nextValue) => setSettings((current) => ({ ...current, topicScoutSearchApiKey: nextValue }))}
+                placeholder="Bearer search key"
+                type="password"
+              />
+              <InputField
+                label="Search URL"
+                value={settings.topicScoutSearchUrl}
+                onChange={(nextValue) => setSettings((current) => ({ ...current, topicScoutSearchUrl: nextValue }))}
+                placeholder="https://search.infoquest.bytepluses.com"
+              />
+              <InputField
+                label="Scout Model API Key"
+                value={settings.topicScoutModelApiKey}
+                onChange={(nextValue) => setSettings((current) => ({ ...current, topicScoutModelApiKey: nextValue }))}
+                placeholder="Bearer ARK model key"
+                type="password"
+              />
+              <InputField
+                label="Scout Model Base URL"
+                value={settings.topicScoutModelBaseUrl}
+                onChange={(nextValue) => setSettings((current) => ({ ...current, topicScoutModelBaseUrl: nextValue }))}
+                placeholder="https://ark.ap-southeast.bytepluses.com/api/v3"
+              />
+              <InputField
+                label="Scout Model"
+                value={settings.topicScoutModel}
+                onChange={(nextValue) => setSettings((current) => ({ ...current, topicScoutModel: nextValue }))}
+                placeholder="seed-2-0-mini-260215"
+              />
+              <div className="rounded-2xl bg-slate-50 px-4 py-3 text-sm leading-6 text-slate-600">
+                Ringkasnya: <span className="font-medium text-slate-900">Search API</span> untuk ambil hasil web terbaru,{" "}
+                <span className="font-medium text-slate-900">Scout Model API</span> untuk chat/responses yang merangkum hasil tadi,
+                dan <span className="font-medium text-slate-900">BytePlus Config</span> di atas tetap khusus image generation.
+              </div>
+              <label className="space-y-2">
+                <span className="text-sm font-medium text-slate-700">Default Query</span>
+                <textarea
+                  value={settings.topicScoutDefaultQuery}
+                  onChange={(event) =>
+                    setSettings((current) => ({ ...current, topicScoutDefaultQuery: event.target.value }))
+                  }
+                  rows={5}
+                  className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm leading-6 text-slate-900"
+                  placeholder="tren terbaru hotel indonesia direct booking OTA hospitality marketing"
+                />
+              </label>
+            </div>
+          </section>
+
+          <section className="rounded-[32px] border border-slate-200/60 bg-white p-6 shadow-panel">
+            <div className="mb-5">
+              <h3 className="text-lg font-semibold text-slate-950">Meta Social Config</h3>
+              <p className="mt-1 text-sm text-slate-500">
+                Root config untuk publish Facebook Page dan Instagram Business via Meta Graph API.
+              </p>
+            </div>
+
+            <div className="space-y-4">
+              <InputField
+                label="Meta App ID"
+                value={settings.metaAppId}
+                onChange={(nextValue) => setSettings((current) => ({ ...current, metaAppId: nextValue }))}
+                placeholder="Meta app id"
+              />
+              <InputField
+                label="Meta App Secret"
+                value={settings.metaAppSecret}
+                onChange={(nextValue) => setSettings((current) => ({ ...current, metaAppSecret: nextValue }))}
+                placeholder="Meta app secret"
+                type="password"
+              />
+              <InputField
+                label="Graph Version"
+                value={settings.metaGraphVersion}
+                onChange={(nextValue) => setSettings((current) => ({ ...current, metaGraphVersion: nextValue }))}
+                placeholder="v23.0"
+              />
+              <InputField
+                label="Facebook Page ID"
+                value={settings.metaFacebookPageId}
+                onChange={(nextValue) => setSettings((current) => ({ ...current, metaFacebookPageId: nextValue }))}
+                placeholder="Page ID"
+              />
+              <InputField
+                label="Facebook Page Name"
+                value={settings.metaFacebookPageName}
+                onChange={(nextValue) => setSettings((current) => ({ ...current, metaFacebookPageName: nextValue }))}
+                placeholder="Nama page untuk monitoring"
+              />
+              <InputField
+                label="Instagram Business ID"
+                value={settings.metaInstagramBusinessId}
+                onChange={(nextValue) => setSettings((current) => ({ ...current, metaInstagramBusinessId: nextValue }))}
+                placeholder="IG business account id"
+              />
+              <InputField
+                label="Instagram Username"
+                value={settings.metaInstagramUsername}
+                onChange={(nextValue) => setSettings((current) => ({ ...current, metaInstagramUsername: nextValue }))}
+                placeholder="username untuk display"
+              />
+              <InputField
+                label="Meta Page Access Token"
+                value={settings.metaPageAccessToken}
+                onChange={(nextValue) => setSettings((current) => ({ ...current, metaPageAccessToken: nextValue }))}
+                placeholder="EAAB..."
+                type="password"
+              />
+              <InputField
+                label="Token Expires At"
+                value={settings.metaPageTokenExpiresAt}
+                onChange={(nextValue) => setSettings((current) => ({ ...current, metaPageTokenExpiresAt: nextValue }))}
+                placeholder="2026-04-30T12:00:00.000Z"
+              />
+
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+                <button
+                  type="button"
+                  onClick={() => void handleTestMetaConnection()}
+                  disabled={testingMeta || saving || loading}
+                  className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-medium text-slate-800 transition hover:border-slate-950 hover:text-slate-950 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {testingMeta ? "Testing..." : "Test Meta Connection"}
+                </button>
+
+                {metaTestResult ? <p className="text-sm leading-6 text-slate-600">{metaTestResult}</p> : null}
+              </div>
+            </div>
+          </section>
+
+          <section className="rounded-[32px] border border-slate-200/60 bg-white p-6 shadow-panel">
+            <div className="mb-5">
+              <h3 className="text-lg font-semibold text-slate-950">LinkedIn Config</h3>
+              <p className="mt-1 text-sm text-slate-500">
+                Root config LinkedIn OAuth 2.0, actor URN, dan token publish untuk personal atau organization.
+              </p>
+            </div>
+
+            <div className="space-y-4">
+              <InputField
+                label="Client ID"
+                value={settings.linkedinClientId}
+                onChange={(nextValue) => setSettings((current) => ({ ...current, linkedinClientId: nextValue }))}
+                placeholder="LinkedIn client id"
+              />
+              <InputField
+                label="Client Secret"
+                value={settings.linkedinClientSecret}
+                onChange={(nextValue) => setSettings((current) => ({ ...current, linkedinClientSecret: nextValue }))}
+                placeholder="LinkedIn client secret"
+                type="password"
+              />
+              <InputField
+                label="Redirect URI"
+                value={settings.linkedinRedirectUri}
+                onChange={(nextValue) => setSettings((current) => ({ ...current, linkedinRedirectUri: nextValue }))}
+                placeholder="https://domain.com/api/social/linkedin/callback"
+              />
+              <InputField
+                label="Access Token"
+                value={settings.linkedinAccessToken}
+                onChange={(nextValue) => setSettings((current) => ({ ...current, linkedinAccessToken: nextValue }))}
+                placeholder="LinkedIn access token"
+                type="password"
+              />
+              <InputField
+                label="Refresh Token"
+                value={settings.linkedinRefreshToken}
+                onChange={(nextValue) => setSettings((current) => ({ ...current, linkedinRefreshToken: nextValue }))}
+                placeholder="LinkedIn refresh token"
+                type="password"
+              />
+              <InputField
+                label="Token Expires At"
+                value={settings.linkedinTokenExpiresAt}
+                onChange={(nextValue) => setSettings((current) => ({ ...current, linkedinTokenExpiresAt: nextValue }))}
+                placeholder="2026-04-30T12:00:00.000Z"
+              />
+              <InputField
+                label="Author URN"
+                value={settings.linkedinAuthorUrn}
+                onChange={(nextValue) => setSettings((current) => ({ ...current, linkedinAuthorUrn: nextValue }))}
+                placeholder="urn:li:person:xxxx"
+              />
+              <InputField
+                label="Organization URN"
+                value={settings.linkedinOrganizationUrn}
+                onChange={(nextValue) => setSettings((current) => ({ ...current, linkedinOrganizationUrn: nextValue }))}
+                placeholder="urn:li:organization:xxxx"
+              />
+              <InputField
+                label="LinkedIn API Version"
+                value={settings.linkedinApiVersion}
+                onChange={(nextValue) => setSettings((current) => ({ ...current, linkedinApiVersion: nextValue }))}
+                placeholder="202504"
+              />
+
+              <div className="flex flex-col gap-3">
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+                  <button
+                    type="button"
+                    onClick={() => void handleConnectLinkedIn()}
+                    disabled={saving || loading}
+                    className="rounded-2xl bg-slate-950 px-4 py-3 text-sm font-medium text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    Connect LinkedIn OAuth
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => void handleTestLinkedInConnection()}
+                    disabled={testingLinkedIn || saving || loading}
+                    className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-medium text-slate-800 transition hover:border-slate-950 hover:text-slate-950 disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    {testingLinkedIn ? "Testing..." : "Test LinkedIn Connection"}
+                  </button>
+                </div>
+
+                {linkedinTestResult ? <p className="text-sm leading-6 text-slate-600">{linkedinTestResult}</p> : null}
+              </div>
+            </div>
+          </section>
+
+          <section className="rounded-[32px] border border-slate-200/60 bg-white p-6 shadow-panel">
+            <div className="mb-5">
+              <h3 className="text-lg font-semibold text-slate-950">Threads Config</h3>
+              <p className="mt-1 text-sm text-slate-500">
+                Root config untuk publish Threads chain memakai Threads API dengan nested self-replies.
+              </p>
+            </div>
+
+            <div className="space-y-4">
+              <InputField
+                label="Threads User ID"
+                value={settings.threadsUserId}
+                onChange={(nextValue) => setSettings((current) => ({ ...current, threadsUserId: nextValue }))}
+                placeholder="threads user id atau kosong untuk me"
+              />
+              <InputField
+                label="Threads Username"
+                value={settings.threadsUsername}
+                onChange={(nextValue) => setSettings((current) => ({ ...current, threadsUsername: nextValue }))}
+                placeholder="username untuk display"
+              />
+              <InputField
+                label="Threads Access Token"
+                value={settings.threadsAccessToken}
+                onChange={(nextValue) => setSettings((current) => ({ ...current, threadsAccessToken: nextValue }))}
+                placeholder="threads access token"
+                type="password"
+              />
+              <InputField
+                label="Threads Token Expires At"
+                value={settings.threadsTokenExpiresAt}
+                onChange={(nextValue) => setSettings((current) => ({ ...current, threadsTokenExpiresAt: nextValue }))}
+                placeholder="2026-04-30T12:00:00.000Z"
+              />
+              <InputField
+                label="Threads API Version"
+                value={settings.threadsApiVersion}
+                onChange={(nextValue) => setSettings((current) => ({ ...current, threadsApiVersion: nextValue }))}
+                placeholder="v1.0"
+              />
+              <InputField
+                label="Threads API Base URL"
+                value={settings.threadsApiBaseUrl}
+                onChange={(nextValue) => setSettings((current) => ({ ...current, threadsApiBaseUrl: nextValue }))}
+                placeholder="https://graph.threads.net"
+              />
+
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+                <button
+                  type="button"
+                  onClick={() => void handleTestThreadsConnection()}
+                  disabled={testingThreads || saving || loading}
+                  className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-medium text-slate-800 transition hover:border-slate-950 hover:text-slate-950 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {testingThreads ? "Testing..." : "Test Threads Connection"}
+                </button>
+
+                {threadsTestResult ? <p className="text-sm leading-6 text-slate-600">{threadsTestResult}</p> : null}
+              </div>
+
+              <div className="rounded-2xl bg-slate-50 px-4 py-3 text-sm leading-6 text-slate-600">
+                Gunakan token Threads yang memiliki izin publish. Untuk thread series, app akan membuat main post lalu self-reply berantai memakai `reply_to_id`.
+              </div>
+            </div>
+          </section>
         </div>
 
         <section data-tour="settings-security" className="rounded-[32px] border border-slate-200/60 bg-white p-6 shadow-panel">
@@ -571,6 +1121,43 @@ export function SettingsClient() {
           >
             {saving ? "Menyimpan..." : "Simpan Settings"}
           </button>
+        </section>
+
+        <section className="rounded-[32px] border border-slate-200/60 bg-white p-6 shadow-panel">
+          <div className="mb-5">
+            <h3 className="text-lg font-semibold text-slate-950">Scheduling dan Automation</h3>
+            <p className="mt-1 text-sm text-slate-500">
+              Root switch untuk auto-post scheduler. Cron publik memakai endpoint `/api/cron/creator-publish` dengan header `x-scheduler-secret`.
+            </p>
+          </div>
+
+          <div className="space-y-4">
+            <CheckboxField
+              label="Aktifkan Auto Post"
+              checked={settings.autoPostEnabled}
+              onChange={(nextValue) => setSettings((current) => ({ ...current, autoPostEnabled: nextValue }))}
+              description="Saat aktif, draft `scheduled` yang sudah due bisa diproses oleh cron publisher."
+            />
+            <InputField
+              label="Scheduler Secret"
+              value={settings.schedulerSecret}
+              onChange={(nextValue) => setSettings((current) => ({ ...current, schedulerSecret: nextValue }))}
+              placeholder="secret untuk cron publisher"
+              type="password"
+            />
+            <div className="rounded-2xl bg-slate-50 px-4 py-3 text-sm leading-6 text-slate-600">
+              Contoh cron: `POST /api/cron/creator-publish` dengan header `x-scheduler-secret: ...`.
+              Draft due juga bisa dipaksa jalan dari dashboard lewat tombol manual run.
+            </div>
+            <button
+              type="button"
+              onClick={() => void handleRunPublisher()}
+              disabled={runningPublisher || saving || loading}
+              className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-medium text-slate-800 transition hover:border-slate-950 hover:text-slate-950 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {runningPublisher ? "Menjalankan..." : "Run Publisher Now"}
+            </button>
+          </div>
         </section>
 
         <section className="rounded-[32px] border border-slate-200/60 bg-white p-6 shadow-panel">
@@ -639,3 +1226,5 @@ export function SettingsClient() {
     </div>
   );
 }
+
+

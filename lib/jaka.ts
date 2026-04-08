@@ -47,6 +47,31 @@ const appContext = {
       description: "Ringkasan statistik, health sistem, recent activity, dan memory session."
     },
     {
+      path: "/jaka-creator",
+      name: "Jaka Creator",
+      description: "Hub modul creator dengan submenu platform untuk Threads, Instagram, LinkedIn, dan Facebook."
+    },
+    {
+      path: "/jaka-creator/threads",
+      name: "Creator Threads",
+      description: "Studio creator khusus Threads dengan hook-first thread workflow."
+    },
+    {
+      path: "/jaka-creator/instagram",
+      name: "Creator Instagram",
+      description: "Studio creator Instagram untuk caption dan image generation."
+    },
+    {
+      path: "/jaka-creator/linkedin",
+      name: "Creator LinkedIn",
+      description: "Studio creator LinkedIn untuk authority post dan visual profesional."
+    },
+    {
+      path: "/jaka-creator/facebook",
+      name: "Creator Facebook",
+      description: "Studio creator Facebook untuk post komunitas dan visual shareable."
+    },
+    {
       path: "/ai-chat",
       name: "AI Chat",
       description: "Tempat test AI secara manual tanpa menunggu pesan WhatsApp masuk."
@@ -69,6 +94,7 @@ const appContext = {
   ],
   capabilities: [
     "WA auto reply via webhook",
+    "Jaka AI Creator multi-platform dengan approval workflow",
     "AI manual testing",
     "AI memory per nomor WhatsApp",
     "RAG dengan MongoDB",

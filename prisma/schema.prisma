@@ -25,6 +25,41 @@ model AppConfig {
   embeddingModel      String
   embeddingDimensions String
   embeddingBaseUrl    String
+  bytePlusApiKey      String   @default("")
+  bytePlusBaseUrl     String   @default("https://ark.ap-southeast.bytepluses.com/api/v3")
+  bytePlusImageModel  String   @default("seedream-4-5-251128")
+  topicScoutSearchApiKey String @default("")
+  topicScoutSearchUrl  String  @default("https://search.infoquest.bytepluses.com")
+  topicScoutModelApiKey String @default("")
+  topicScoutModelBaseUrl String @default("https://ark.ap-southeast.bytepluses.com/api/v3")
+  topicScoutModel      String  @default("seed-2-0-mini-260215")
+  topicScoutDefaultQuery String @default("tren terbaru hotel indonesia direct booking OTA website hotel AI customer service hospitality marketing")
+  metaAppId           String   @default("")
+  metaAppSecret       String   @default("")
+  metaGraphVersion    String   @default("v23.0")
+  metaFacebookPageId  String   @default("")
+  metaFacebookPageName String  @default("")
+  metaInstagramBusinessId String @default("")
+  metaInstagramUsername String @default("")
+  metaPageAccessToken String   @default("")
+  metaPageTokenExpiresAt String @default("")
+  threadsUserId        String   @default("")
+  threadsUsername      String   @default("")
+  threadsAccessToken   String   @default("")
+  threadsTokenExpiresAt String  @default("")
+  threadsApiVersion    String   @default("v1.0")
+  threadsApiBaseUrl    String   @default("https://graph.threads.net")
+  linkedinClientId    String   @default("")
+  linkedinClientSecret String  @default("")
+  linkedinRedirectUri String   @default("")
+  linkedinAccessToken String   @default("")
+  linkedinRefreshToken String  @default("")
+  linkedinTokenExpiresAt String @default("")
+  linkedinAuthorUrn   String   @default("")
+  linkedinOrganizationUrn String @default("")
+  linkedinApiVersion  String   @default("202504")
+  autoPostEnabled     Boolean  @default(false)
+  schedulerSecret     String   @default("")
   createdAt           DateTime @default(now())
   updatedAt           DateTime @updatedAt
 }
@@ -88,3 +123,4 @@ model WebhookEvent {
   @@index([createdAt])
   @@index([stage])
 }
+

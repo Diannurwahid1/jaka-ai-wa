@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 
 import { askAI } from "@/lib/ai";
+import { handleCreatorApprovalCommand } from "@/lib/creator";
+import { matchesHeaderSecret, verifySignedPayload } from "@/lib/security";
+import { readSettings } from "@/lib/settings";
 import { appendWebhookEvent } from "@/lib/webhook-debug";
 import { createMessage, updateMessage } from "@/lib/store";
 import { detectIntent } from "@/lib/utils";
@@ -31,6 +34,43 @@ export async function GET() {
 export async function POST(request: NextRequest) {
   const rawBody = await request.text();
   const headers = pickHeaders(request);
+  const settings = await readSettings();
+  const webhookSecret = settings.waMasterKey.trim();
+
+  if (!webhookSecret) {
+    await appendWebhookEvent({
+      stage: "rejected",
+      reason: "WA webhook secret belum dikonfigurasi",
+      rawBody: rawBody.slice(0, 4000),
+      headers
+    });
+
+    return NextResponse.json({ ok: false, reason: "WA webhook secret belum dikonfigurasi" }, { status: 503 });
+  }
+
+  const signatureHeaders = [
+    request.headers.get("x-signature"),
+    request.headers.get("x-hub-signature"),
+    request.headers.get("x-hub-signature-256"),
+    request.headers.get("x-webhook-secret"),
+    request.headers.get("x-wa-master-key"),
+    request.headers.get("authorization")
+  ];
+
+  const signatureValid =
+    matchesHeaderSecret(webhookSecret, signatureHeaders) ||
+    verifySignedPayload(webhookSecret, rawBody, signatureHeaders);
+
+  if (!signatureValid) {
+    await appendWebhookEvent({
+      stage: "rejected",
+      reason: "Invalid webhook signature",
+      rawBody: rawBody.slice(0, 4000),
+      headers
+    });
+
+    return NextResponse.json({ ok: false, reason: "Invalid webhook signature" }, { status: 401 });
+  }
 
   let body: unknown;
 
@@ -82,6 +122,26 @@ export async function POST(request: NextRequest) {
   });
 
   try {
+    const creatorCommand = await handleCreatorApprovalCommand(from, message);
+
+    if (creatorCommand.matched) {
+      const sendResult = await sendWA(from, creatorCommand.reply);
+
+      await updateMessage(log.id, {
+        reply: creatorCommand.reply,
+        status: "success"
+      });
+
+      await appendWebhookEvent({
+        stage: "creator_command",
+        from,
+        message,
+        reason: creatorCommand.reply
+      });
+
+      return NextResponse.json({ ok: true, reply: creatorCommand.reply, sendResult });
+    }
+
     const aiReply = await askAI(message, {
       phone: from,
       remember: true

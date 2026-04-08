@@ -4,17 +4,23 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useState } from "react";
 
-import {
-  ChatIcon,
-  DashboardIcon,
-  KnowledgeIcon,
-  MonitorIcon,
-  SettingsIcon
-} from "@/components/icons";
+import { ChatIcon, CreatorIcon, DashboardIcon, KnowledgeIcon, MonitorIcon, SettingsIcon } from "@/components/icons";
 import { cn } from "@/lib/utils";
 
 const items = [
   { href: "/dashboard", label: "Dashboard", icon: DashboardIcon, tourId: "nav-dashboard" },
+  {
+    href: "/jaka-creator",
+    label: "Jaka Creator",
+    icon: CreatorIcon,
+    tourId: "nav-jaka-creator",
+    children: [
+      { href: "/jaka-creator/threads", label: "Threads" },
+      { href: "/jaka-creator/instagram", label: "Instagram" },
+      { href: "/jaka-creator/linkedin", label: "LinkedIn" },
+      { href: "/jaka-creator/facebook", label: "Facebook" }
+    ]
+  },
   { href: "/ai-chat", label: "AI Chat", icon: ChatIcon, tourId: "nav-ai-chat" },
   { href: "/wa-monitor", label: "WA Monitor", icon: MonitorIcon, tourId: "nav-wa-monitor" },
   { href: "/knowledge-base", label: "Knowledge", icon: KnowledgeIcon, tourId: "nav-knowledge" },
@@ -73,24 +79,49 @@ export function Sidebar() {
         <nav className="space-y-2">
           {items.map((item) => {
             const Icon = item.icon;
-            const active = pathname === item.href;
+            const active = pathname === item.href || pathname.startsWith(`${item.href}/`);
 
             return (
-              <Link
-                key={item.href}
-                href={item.href}
-                data-tour={item.tourId}
-                onClick={closeMobileMenu}
-                className={cn(
-                  "flex items-center gap-3 rounded-2xl px-4 py-3 text-sm font-medium transition",
-                  active
-                    ? "bg-slate-950 text-white shadow-panel"
-                    : "text-slate-600 hover:bg-white hover:text-slate-950"
-                )}
-              >
-                <Icon />
-                <span>{item.label}</span>
-              </Link>
+              <div key={item.href} className="space-y-2">
+                <Link
+                  href={item.href}
+                  data-tour={item.tourId}
+                  onClick={closeMobileMenu}
+                  className={cn(
+                    "flex items-center gap-3 rounded-2xl px-4 py-3 text-sm font-medium transition",
+                    active
+                      ? "bg-slate-950 text-white shadow-panel"
+                      : "text-slate-600 hover:bg-white hover:text-slate-950"
+                  )}
+                >
+                  <Icon />
+                  <span>{item.label}</span>
+                </Link>
+
+                {item.children && active ? (
+                  <div className="space-y-1 pl-4">
+                    {item.children.map((child) => {
+                      const childActive = pathname === child.href;
+
+                      return (
+                        <Link
+                          key={child.href}
+                          href={child.href}
+                          onClick={closeMobileMenu}
+                          className={cn(
+                            "flex items-center rounded-2xl px-4 py-2.5 text-sm transition",
+                            childActive
+                              ? "bg-white font-medium text-slate-950 shadow-sm"
+                              : "text-slate-500 hover:bg-white hover:text-slate-950"
+                          )}
+                        >
+                          {child.label}
+                        </Link>
+                      );
+                    })}
+                  </div>
+                ) : null}
+              </div>
             );
           })}
         </nav>

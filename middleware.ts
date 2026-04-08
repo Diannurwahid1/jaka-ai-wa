@@ -3,8 +3,8 @@ import { NextResponse, type NextRequest } from "next/server";
 import { AUTH_COOKIE, isSameOrigin, verifySessionToken } from "@/lib/auth-shared";
 
 const publicPagePaths = new Set(["/login"]);
-const publicApiPaths = new Set(["/api/auth/login", "/api/webhook/wa"]);
-const protectedAppPrefixes = ["/dashboard", "/ai-chat", "/wa-monitor", "/knowledge-base", "/settings"];
+const publicApiPaths = new Set(["/api/auth/login", "/api/webhook/wa", "/api/cron/creator-publish"]);
+const protectedAppPrefixes = ["/dashboard", "/jaka-creator", "/ai-chat", "/wa-monitor", "/knowledge-base", "/settings"];
 const protectedApiPrefixes = ["/api/"];
 
 async function hasValidSession(request: NextRequest) {

@@ -37,10 +37,56 @@ const fallbackSettings: AppSettings = {
   embeddingApiKey: process.env.EMBEDDING_API_KEY ?? "",
   embeddingModel: process.env.EMBEDDING_MODEL ?? "voyage-4-large",
   embeddingDimensions: process.env.EMBEDDING_DIMENSIONS ?? "1024",
-  embeddingBaseUrl: process.env.EMBEDDING_BASE_URL ?? "https://ai.mongodb.com/v1"
+  embeddingBaseUrl: process.env.EMBEDDING_BASE_URL ?? "https://ai.mongodb.com/v1",
+  bytePlusApiKey: process.env.ARK_API_KEY ?? "",
+  bytePlusBaseUrl: process.env.ARK_BASE_URL ?? "https://ark.ap-southeast.bytepluses.com/api/v3",
+  bytePlusImageModel: process.env.ARK_IMAGE_MODEL ?? "seedream-4-5-251128",
+  topicScoutSearchApiKey: process.env.TOPIC_SCOUT_SEARCH_API_KEY ?? "",
+  topicScoutSearchUrl: process.env.TOPIC_SCOUT_SEARCH_URL ?? "https://search.infoquest.bytepluses.com",
+  topicScoutModelApiKey: process.env.TOPIC_SCOUT_MODEL_API_KEY ?? process.env.ARK_API_KEY ?? "",
+  topicScoutModelBaseUrl:
+    process.env.TOPIC_SCOUT_MODEL_BASE_URL ??
+    process.env.ARK_BASE_URL ??
+    "https://ark.ap-southeast.bytepluses.com/api/v3",
+  topicScoutModel: process.env.TOPIC_SCOUT_MODEL ?? "seed-2-0-mini-260215",
+  topicScoutDefaultQuery:
+    process.env.TOPIC_SCOUT_DEFAULT_QUERY ??
+    "tren terbaru hotel indonesia direct booking OTA website hotel AI customer service hospitality marketing",
+  metaAppId: process.env.META_APP_ID ?? "",
+  metaAppSecret: process.env.META_APP_SECRET ?? "",
+  metaGraphVersion: process.env.META_GRAPH_VERSION ?? "v23.0",
+  metaFacebookPageId: process.env.META_FACEBOOK_PAGE_ID ?? "",
+  metaFacebookPageName: process.env.META_FACEBOOK_PAGE_NAME ?? "",
+  metaInstagramBusinessId: process.env.META_INSTAGRAM_BUSINESS_ID ?? "",
+  metaInstagramUsername: process.env.META_INSTAGRAM_USERNAME ?? "",
+  metaPageAccessToken: process.env.META_PAGE_ACCESS_TOKEN ?? "",
+  metaPageTokenExpiresAt: process.env.META_PAGE_TOKEN_EXPIRES_AT ?? "",
+  threadsUserId: process.env.THREADS_USER_ID ?? "",
+  threadsUsername: process.env.THREADS_USERNAME ?? "",
+  threadsAccessToken: process.env.THREADS_ACCESS_TOKEN ?? "",
+  threadsTokenExpiresAt: process.env.THREADS_TOKEN_EXPIRES_AT ?? "",
+  threadsApiVersion: process.env.THREADS_API_VERSION ?? "v1.0",
+  threadsApiBaseUrl: process.env.THREADS_API_BASE_URL ?? "https://graph.threads.net",
+  linkedinClientId: process.env.LINKEDIN_CLIENT_ID ?? "",
+  linkedinClientSecret: process.env.LINKEDIN_CLIENT_SECRET ?? "",
+  linkedinRedirectUri: process.env.LINKEDIN_REDIRECT_URI ?? "",
+  linkedinAccessToken: process.env.LINKEDIN_ACCESS_TOKEN ?? "",
+  linkedinRefreshToken: process.env.LINKEDIN_REFRESH_TOKEN ?? "",
+  linkedinTokenExpiresAt: process.env.LINKEDIN_TOKEN_EXPIRES_AT ?? "",
+  linkedinAuthorUrn: process.env.LINKEDIN_AUTHOR_URN ?? "",
+  linkedinOrganizationUrn: process.env.LINKEDIN_ORGANIZATION_URN ?? "",
+  linkedinApiVersion: process.env.LINKEDIN_API_VERSION ?? "202504",
+  autoPostEnabled: (process.env.AUTO_POST_ENABLED ?? "").trim().toLowerCase() === "true",
+  schedulerSecret: process.env.SCHEDULER_SECRET ?? ""
 };
 
 function sanitizeSettings(input: Partial<AppSettings>, current: AppSettings): AppSettings {
+  const nextBytePlusImageModel = input.bytePlusImageModel?.trim() ?? current.bytePlusImageModel;
+  const nextMetaGraphVersion = input.metaGraphVersion?.trim() ?? current.metaGraphVersion;
+  const nextThreadsApiVersion = input.threadsApiVersion?.trim() ?? current.threadsApiVersion;
+  const nextThreadsApiBaseUrl = input.threadsApiBaseUrl?.trim() ?? current.threadsApiBaseUrl;
+  const nextLinkedinApiVersion = input.linkedinApiVersion?.trim() ?? current.linkedinApiVersion;
+
   return {
     aiApiUrl: input.aiApiUrl?.trim() ?? current.aiApiUrl,
     aiApiKey: input.aiApiKey?.trim() ?? current.aiApiKey,
@@ -58,7 +104,42 @@ function sanitizeSettings(input: Partial<AppSettings>, current: AppSettings): Ap
     embeddingApiKey: input.embeddingApiKey?.trim() ?? current.embeddingApiKey,
     embeddingModel: input.embeddingModel?.trim() ?? current.embeddingModel,
     embeddingDimensions: input.embeddingDimensions?.trim() ?? current.embeddingDimensions,
-    embeddingBaseUrl: input.embeddingBaseUrl?.trim() ?? current.embeddingBaseUrl
+    embeddingBaseUrl: input.embeddingBaseUrl?.trim() ?? current.embeddingBaseUrl,
+    bytePlusApiKey: input.bytePlusApiKey?.trim() ?? current.bytePlusApiKey,
+    bytePlusBaseUrl: input.bytePlusBaseUrl?.trim() ?? current.bytePlusBaseUrl,
+    bytePlusImageModel: nextBytePlusImageModel,
+    topicScoutSearchApiKey: input.topicScoutSearchApiKey?.trim() ?? current.topicScoutSearchApiKey,
+    topicScoutSearchUrl: input.topicScoutSearchUrl?.trim() ?? current.topicScoutSearchUrl,
+    topicScoutModelApiKey: input.topicScoutModelApiKey?.trim() ?? current.topicScoutModelApiKey,
+    topicScoutModelBaseUrl: input.topicScoutModelBaseUrl?.trim() ?? current.topicScoutModelBaseUrl,
+    topicScoutModel: input.topicScoutModel?.trim() ?? current.topicScoutModel,
+    topicScoutDefaultQuery: input.topicScoutDefaultQuery?.trim() ?? current.topicScoutDefaultQuery,
+    metaAppId: input.metaAppId?.trim() ?? current.metaAppId,
+    metaAppSecret: input.metaAppSecret?.trim() ?? current.metaAppSecret,
+    metaGraphVersion: nextMetaGraphVersion || fallbackSettings.metaGraphVersion,
+    metaFacebookPageId: input.metaFacebookPageId?.trim() ?? current.metaFacebookPageId,
+    metaFacebookPageName: input.metaFacebookPageName?.trim() ?? current.metaFacebookPageName,
+    metaInstagramBusinessId: input.metaInstagramBusinessId?.trim() ?? current.metaInstagramBusinessId,
+    metaInstagramUsername: input.metaInstagramUsername?.trim() ?? current.metaInstagramUsername,
+    metaPageAccessToken: input.metaPageAccessToken?.trim() ?? current.metaPageAccessToken,
+    metaPageTokenExpiresAt: input.metaPageTokenExpiresAt?.trim() ?? current.metaPageTokenExpiresAt,
+    threadsUserId: input.threadsUserId?.trim() ?? current.threadsUserId,
+    threadsUsername: input.threadsUsername?.trim() ?? current.threadsUsername,
+    threadsAccessToken: input.threadsAccessToken?.trim() ?? current.threadsAccessToken,
+    threadsTokenExpiresAt: input.threadsTokenExpiresAt?.trim() ?? current.threadsTokenExpiresAt,
+    threadsApiVersion: nextThreadsApiVersion || fallbackSettings.threadsApiVersion,
+    threadsApiBaseUrl: nextThreadsApiBaseUrl || fallbackSettings.threadsApiBaseUrl,
+    linkedinClientId: input.linkedinClientId?.trim() ?? current.linkedinClientId,
+    linkedinClientSecret: input.linkedinClientSecret?.trim() ?? current.linkedinClientSecret,
+    linkedinRedirectUri: input.linkedinRedirectUri?.trim() ?? current.linkedinRedirectUri,
+    linkedinAccessToken: input.linkedinAccessToken?.trim() ?? current.linkedinAccessToken,
+    linkedinRefreshToken: input.linkedinRefreshToken?.trim() ?? current.linkedinRefreshToken,
+    linkedinTokenExpiresAt: input.linkedinTokenExpiresAt?.trim() ?? current.linkedinTokenExpiresAt,
+    linkedinAuthorUrn: input.linkedinAuthorUrn?.trim() ?? current.linkedinAuthorUrn,
+    linkedinOrganizationUrn: input.linkedinOrganizationUrn?.trim() ?? current.linkedinOrganizationUrn,
+    linkedinApiVersion: nextLinkedinApiVersion || fallbackSettings.linkedinApiVersion,
+    autoPostEnabled: typeof input.autoPostEnabled === "boolean" ? input.autoPostEnabled : current.autoPostEnabled,
+    schedulerSecret: input.schedulerSecret?.trim() ?? current.schedulerSecret
   };
 }
 
@@ -94,3 +175,4 @@ export async function writeSettings(input: Partial<AppSettings>) {
 
   return sanitizeSettings(updated, fallbackSettings);
 }
+

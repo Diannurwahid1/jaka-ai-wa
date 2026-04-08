@@ -32,6 +32,41 @@ export type AppSettings = {
   embeddingModel: string;
   embeddingDimensions: string;
   embeddingBaseUrl: string;
+  bytePlusApiKey: string;
+  bytePlusBaseUrl: string;
+  bytePlusImageModel: string;
+  topicScoutSearchApiKey: string;
+  topicScoutSearchUrl: string;
+  topicScoutModelApiKey: string;
+  topicScoutModelBaseUrl: string;
+  topicScoutModel: string;
+  topicScoutDefaultQuery: string;
+  metaAppId: string;
+  metaAppSecret: string;
+  metaGraphVersion: string;
+  metaFacebookPageId: string;
+  metaFacebookPageName: string;
+  metaInstagramBusinessId: string;
+  metaInstagramUsername: string;
+  metaPageAccessToken: string;
+  metaPageTokenExpiresAt: string;
+  threadsUserId: string;
+  threadsUsername: string;
+  threadsAccessToken: string;
+  threadsTokenExpiresAt: string;
+  threadsApiVersion: string;
+  threadsApiBaseUrl: string;
+  linkedinClientId: string;
+  linkedinClientSecret: string;
+  linkedinRedirectUri: string;
+  linkedinAccessToken: string;
+  linkedinRefreshToken: string;
+  linkedinTokenExpiresAt: string;
+  linkedinAuthorUrn: string;
+  linkedinOrganizationUrn: string;
+  linkedinApiVersion: string;
+  autoPostEnabled: boolean;
+  schedulerSecret: string;
 };
 
 export type DashboardOverview = {
@@ -45,3 +80,4 @@ export type DashboardOverview = {
   aiStatus: "ready" | "missing";
   recent: MessageLog[];
 };
+
