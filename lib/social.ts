@@ -482,19 +482,7 @@ export async function testMetaConnection(): Promise<SocialConnectionResult> {
 export async function testLinkedInConnection(): Promise<SocialConnectionResult> {
   const settings = await refreshLinkedInAccessTokenIfNeeded();
   const config = ensureLinkedInConfig(settings);
-
-  const url = new URL("https://api.linkedin.com/v2/ugcPosts");
-  url.searchParams.set("q", "authors");
-  url.searchParams.set("authors", `List(${config.actorUrn})`);
-  url.searchParams.set("count", "1");
-
-  const posts = await fetchJsonOrThrow<{ paging?: Record<string, unknown> }>(url.toString(), {
-    headers: {
-      Authorization: `Bearer ${config.accessToken}`,
-      "X-Restli-Protocol-Version": "2.0.0"
-    },
-    signal: AbortSignal.timeout(20000)
-  });
+  const profile = await fetchLinkedInUserInfo(config.accessToken);
 
   return {
     ok: true,
@@ -502,9 +490,11 @@ export async function testLinkedInConnection(): Promise<SocialConnectionResult> 
     summary: `LinkedIn token valid untuk actor ${config.targetLabel}.`,
     details: {
       actorUrn: config.actorUrn,
+      memberId: String(profile.sub ?? ""),
+      name: String(profile.name ?? ""),
+      email: String(profile.email ?? ""),
       refreshToken: config.refreshToken ? redactToken(config.refreshToken) : "",
-      accessToken: redactToken(config.accessToken),
-      paging: posts.paging ?? {}
+      accessToken: redactToken(config.accessToken)
     }
   };
 }
