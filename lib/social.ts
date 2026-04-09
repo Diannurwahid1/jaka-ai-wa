@@ -27,9 +27,7 @@ type PublishExecutionResult = {
 const linkedInScopes = [
   "openid",
   "profile",
-  "w_member_social",
-  "w_organization_social",
-  "rw_organization_admin"
+  "w_member_social"
 ];
 
 function redactToken(value: string) {
