@@ -311,13 +311,40 @@ function now() {
   return new Date();
 }
 
-function digitsOnly(value: string) {
-  return value.replace(/\D/g, "");
+function serializeError(error: unknown) {
+  if (error instanceof Error) {
+    return {
+      name: error.name,
+      message: error.message,
+      stack: error.stack
+    };
+  }
+
+  return {
+    message: String(error)
+  };
+}
+
+function truncateForLog(value: string, max = 1200) {
+  if (value.length <= max) {
+    return value;
+  }
+
+  return `${value.slice(0, max)}...<truncated>`;
+}
+
+function normalizePhoneDigits(value: string) {
+  let digits = value.replace(/\D/g, "");
+  // 0xxx → 62xxx
+  if (digits.startsWith("0")) {
+    digits = "62" + digits.slice(1);
+  }
+  return digits;
 }
 
 function phonesMatch(left?: string, right?: string) {
-  const leftDigits = digitsOnly(left ?? "");
-  const rightDigits = digitsOnly(right ?? "");
+  const leftDigits = normalizePhoneDigits(left ?? "");
+  const rightDigits = normalizePhoneDigits(right ?? "");
   return Boolean(leftDigits) && leftDigits === rightDigits;
 }
 
@@ -1283,7 +1310,23 @@ async function sendDraftToApprovalChannel(
 ) {
   const approvalPhone = profile.approvalPhone?.trim();
 
+  console.info("[creator.approval.send] Preparing approval send", {
+    draftId: document.draftId,
+    platform: document.platform,
+    status: document.status,
+    currentVersion: document.currentVersion,
+    approvalPhone,
+    source: options?.source ?? "dashboard",
+    requestPhone: options?.phone,
+    approvalAttempts: document.approvalAttempts ?? 0
+  });
+
   if (!approvalPhone) {
+    console.error("[creator.approval.send] Approval phone missing", {
+      draftId: document.draftId,
+      platform: document.platform,
+      source: options?.source ?? "dashboard"
+    });
     return {
       success: false as const,
       reason: "Approval phone is not configured."
@@ -1293,9 +1336,19 @@ async function sendDraftToApprovalChannel(
   const { drafts } = await getCollections();
   const attemptNumber = (document.approvalAttempts ?? 0) + 1;
   const actionTime = now();
+  const approvalMessage = formatDraftForApproval(mapDraft(document));
 
   try {
-    await sendWA(approvalPhone, formatDraftForApproval(mapDraft(document)));
+    console.info("[creator.approval.send] Sending approval message", {
+      draftId: document.draftId,
+      platform: document.platform,
+      attemptNumber,
+      approvalPhone,
+      messageLength: approvalMessage.length,
+      messagePreview: truncateForLog(approvalMessage, 500)
+    });
+
+    const sendResult = await sendWA(approvalPhone, approvalMessage);
 
     await drafts.updateOne(
       { _id: document._id },
@@ -1315,11 +1368,30 @@ async function sendDraftToApprovalChannel(
 
     await logApprovalAction(document.draftId, document.platform, "send", options?.source ?? "dashboard", "Approval draft sent", options?.phone);
 
+    console.info("[creator.approval.send] Approval send success", {
+      draftId: document.draftId,
+      platform: document.platform,
+      attemptNumber,
+      approvalPhone,
+      httpStatus: sendResult.httpStatus,
+      apiResponse: sendResult.apiResponse
+    });
+
     return {
       success: true as const
     };
   } catch (error) {
     const reason = error instanceof Error ? error.message : "Gagal mengirim approval draft.";
+
+    console.error("[creator.approval.send] Approval send failed", {
+      draftId: document.draftId,
+      platform: document.platform,
+      attemptNumber,
+      approvalPhone,
+      source: options?.source ?? "dashboard",
+      messagePreview: truncateForLog(approvalMessage, 500),
+      error: serializeError(error)
+    });
 
     await drafts.updateOne(
       { _id: document._id },
@@ -1876,15 +1948,17 @@ Return JSON:
   const parsed = parseJsonPayload(raw) as GeneratedDraftSeed;
   const parts = normalizeGeneratedParts(parsed.parts, draft.type, draft.platform);
   const caption = String(parsed.caption ?? "").trim() || buildCaptionFromParts(parts);
-  const visualPrompt = composeBrandedVisualPrompt(
-    draft.platform,
-    profile,
-    {
-      topic: String(parsed.topic ?? draft.topic).trim() || draft.topic,
-      caption
-    },
-    parsed
-  );
+  const visualPrompt = meta.requiresImage
+    ? composeBrandedVisualPrompt(
+        draft.platform,
+        profile,
+        {
+          topic: String(parsed.topic ?? draft.topic).trim() || draft.topic,
+          caption
+        },
+        parsed
+      )
+    : undefined;
   const image = await generateVisualIfNeeded(draft.platform, profile, {
     topic: String(parsed.topic ?? draft.topic).trim() || draft.topic,
     caption,
@@ -2163,15 +2237,18 @@ export async function simulateCreatorDrafts(input?: {
     const previewTime = now();
     const parts = normalizeGeneratedParts(generatedDraft.parts, type, platform);
     const caption = String(generatedDraft.caption ?? "").trim() || buildCaptionFromParts(parts);
-    const visualPrompt = composeBrandedVisualPrompt(
-      platform,
-      profile,
-      {
-        topic: String(generatedDraft.topic ?? input?.topic ?? `${meta.label} preview`).trim() || `${meta.label} preview`,
-        caption
-      },
-      generatedDraft
-    );
+    const visualPrompt = meta.requiresImage
+      ? composeBrandedVisualPrompt(
+          platform,
+          profile,
+          {
+            topic:
+              String(generatedDraft.topic ?? input?.topic ?? `${meta.label} preview`).trim() || `${meta.label} preview`,
+            caption
+          },
+          generatedDraft
+        )
+      : undefined;
     const image = await generateVisualIfNeeded(platform, profile, {
       topic: String(generatedDraft.topic ?? input?.topic ?? `${meta.label} preview`).trim() || `${meta.label} preview`,
       caption,
@@ -2196,7 +2273,7 @@ export async function simulateCreatorDrafts(input?: {
       imageUrl: image.imageUrl,
       imageProvider: image.imageProvider,
       imageError: image.imageError,
-      imageAspectRatio: profile.generateImages ? profile.imageAspectRatio : undefined,
+      imageAspectRatio: meta.requiresImage && profile.generateImages ? profile.imageAspectRatio : undefined,
       caption,
       status: "draft",
       currentVersion: 1,
@@ -2331,17 +2408,19 @@ export async function generateCreatorDrafts(input?: {
     const createdAt = now();
     const parts = normalizeGeneratedParts(generatedDraft.parts, type, platform);
     const caption = String(generatedDraft.caption ?? "").trim() || buildCaptionFromParts(parts);
-    const visualPrompt = composeBrandedVisualPrompt(
-      platform,
-      profile,
-      {
-        topic:
-          String(generatedDraft.topic ?? manualTopic ?? generated.fallbackTopic ?? `${meta.label} content`).trim() ||
-          `${meta.label} content`,
-        caption
-      },
-      generatedDraft
-    );
+    const visualPrompt = meta.requiresImage
+      ? composeBrandedVisualPrompt(
+          platform,
+          profile,
+          {
+            topic:
+              String(generatedDraft.topic ?? manualTopic ?? generated.fallbackTopic ?? `${meta.label} content`).trim() ||
+              `${meta.label} content`,
+            caption
+          },
+          generatedDraft
+        )
+      : undefined;
     const image = await generateVisualIfNeeded(platform, profile, {
       topic:
         String(generatedDraft.topic ?? manualTopic ?? generated.fallbackTopic ?? `${meta.label} content`).trim() ||
@@ -2367,7 +2446,7 @@ export async function generateCreatorDrafts(input?: {
       imageUrl: image.imageUrl,
       imageProvider: image.imageProvider,
       imageError: image.imageError,
-      imageAspectRatio: profile.generateImages ? profile.imageAspectRatio : undefined,
+      imageAspectRatio: meta.requiresImage && profile.generateImages ? profile.imageAspectRatio : undefined,
       caption,
       status: "draft",
       currentVersion: 1,
@@ -2660,21 +2739,50 @@ export async function sendDraftApprovalMessage(draftId: string) {
   const { drafts } = await getCollections();
   const document = await drafts.findOne({ draftId, creatorId: CREATOR_ID });
 
+  console.info("[creator.approval.manual] Manual send requested", {
+    draftId
+  });
+
   if (!document) {
+    console.error("[creator.approval.manual] Draft not found", {
+      draftId
+    });
     throw new Error("Draft not found.");
   }
 
   const profile = await getCreatorProfile(document.platform);
 
+  console.info("[creator.approval.manual] Draft loaded for manual send", {
+    draftId,
+    platform: document.platform,
+    status: document.status,
+    currentVersion: document.currentVersion,
+    approvalPhone: profile.approvalPhone?.trim() || ""
+  });
+
   if (!profile.approvalPhone) {
+    console.error("[creator.approval.manual] Approval phone missing", {
+      draftId,
+      platform: document.platform
+    });
     throw new Error("Approval phone is not configured.");
   }
 
   const result = await sendDraftToApprovalChannel(document, profile, { source: "dashboard" });
 
   if (!result.success) {
+    console.error("[creator.approval.manual] Manual send failed", {
+      draftId,
+      platform: document.platform,
+      reason: result.reason
+    });
     throw new Error(result.reason);
   }
+
+  console.info("[creator.approval.manual] Manual send completed", {
+    draftId,
+    platform: document.platform
+  });
 
   return true;
 }

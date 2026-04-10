@@ -20,12 +20,22 @@ export async function POST(
       | "publish"
       | "simulate_publish";
 
+    console.info("[api.creator.draft-action] Incoming request", {
+      draftId: params?.draftId,
+      action,
+      instruction: String(body?.instruction ?? "").trim() || undefined
+    });
+
     if (!params.draftId) {
       return NextResponse.json({ ok: false, reason: "draftId is required" }, { status: 400 });
     }
 
     if (action === "send") {
       await sendDraftApprovalMessage(params.draftId);
+      console.info("[api.creator.draft-action] Manual send completed", {
+        draftId: params.draftId,
+        action
+      });
       return NextResponse.json({ ok: true });
     }
 
@@ -45,9 +55,21 @@ export async function POST(
       instruction: String(body?.instruction ?? "").trim() || undefined
     });
 
+    console.info("[api.creator.draft-action] Action completed", {
+      draftId: params.draftId,
+      action
+    });
+
     return NextResponse.json({ ok: true, result });
   } catch (error) {
     const reason = error instanceof Error ? error.message : "Unknown error";
+    console.error("[api.creator.draft-action] Action failed", {
+      draftId: params?.draftId,
+      error:
+        error instanceof Error
+          ? { name: error.name, message: error.message, stack: error.stack }
+          : { message: String(error) }
+    });
     return NextResponse.json({ ok: false, reason }, { status: 500 });
   }
 }
