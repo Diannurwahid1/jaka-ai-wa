@@ -1,3 +1,4 @@
+import { headers as nextHeaders } from "next/headers";
 import { AppSettings } from "@/types";
 import {
   CreatorDraft,
@@ -283,9 +284,20 @@ async function ensureInstagramMediaUrl(rawUrl: string) {
     normalizedUrl.includes("X-Amz-");
 
   if (isPresignedOrCloudCDN) {
-    // We enforce w=1080 (max recommended width for Instagram) and output=jpg 
-    // to prevent 'Media URI doesn't meet our requirements' errors driven by large dimension AI images.
-    normalizedUrl = `https://wsrv.nl/?url=${encodeURIComponent(normalizedUrl)}&w=1080&output=jpg`;
+    try {
+      const headersList = await nextHeaders();
+      const host = headersList.get("x-forwarded-host") || headersList.get("host");
+      const proto = headersList.get("x-forwarded-proto") || "https";
+
+      if (host) {
+        const b64 = Buffer.from(normalizedUrl).toString("base64url");
+        // We append .jpg at the end to satisfy Meta crawler extension heuristics
+        normalizedUrl = `${proto}://${host}/api/media-proxy/${b64}.jpg`;
+      }
+    } catch {
+      // Fallback if somehow called outside of a Next.js Request context
+      console.warn("[social proxy] Called outside request context, bypassing proxy.");
+    }
   }
   const headers = {
     "User-Agent":
