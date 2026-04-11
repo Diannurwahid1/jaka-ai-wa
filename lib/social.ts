@@ -270,7 +270,21 @@ function normalizeMediaUrl(rawUrl: string) {
 }
 
 async function ensureInstagramMediaUrl(rawUrl: string) {
-  const normalizedUrl = normalizeMediaUrl(rawUrl);
+  let normalizedUrl = normalizeMediaUrl(rawUrl);
+
+  // Meta (Facebook/Instagram) crawler blocks or mangles presigned query params from many CDNs (TOS, AWS, etc).
+  // We use wsrv.nl proxy to strip presigned signatures and serve a pure static image directly to Meta.
+  const isPresignedOrCloudCDN =
+    normalizedUrl.includes("volces.com") ||
+    normalizedUrl.includes("amazonaws.com") ||
+    normalizedUrl.includes("googleapis.com") ||
+    normalizedUrl.includes("aliyuncs.com") ||
+    normalizedUrl.includes("X-Tos-") ||
+    normalizedUrl.includes("X-Amz-");
+
+  if (isPresignedOrCloudCDN) {
+    normalizedUrl = `https://wsrv.nl/?url=${encodeURIComponent(normalizedUrl)}`;
+  }
   const headers = {
     "User-Agent":
       "Mozilla/5.0 (compatible; MetaMediaPreflight/1.0; +https://developers.facebook.com/docs/instagram-platform)",
