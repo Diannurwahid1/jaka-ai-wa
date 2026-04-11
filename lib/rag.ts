@@ -135,7 +135,15 @@ async function createAtlasEmbedding(
     throw new Error(`MongoDB Atlas embedding request failed (${response.status}): ${detail}`);
   }
 
-  const payload = await response.json();
+  const raw = await response.text();
+  let payload: unknown;
+
+  try {
+    payload = raw ? JSON.parse(raw) : null;
+  } catch {
+    throw new Error(`MongoDB Atlas embedding returned non-JSON response (${response.status}): ${raw.slice(0, 240)}`);
+  }
+
   return extractEmbedding(payload);
 }
 

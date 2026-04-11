@@ -8,6 +8,7 @@ datasource db {
 
 model AppConfig {
   id                  Int      @id
+  aiAutoReplyEnabled  Boolean  @default(true)
   aiApiUrl            String
   aiApiKey            String
   aiModel             String
@@ -123,4 +124,3 @@ model WebhookEvent {
   @@index([createdAt])
   @@index([stage])
 }
-

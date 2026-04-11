@@ -21,6 +21,7 @@ Jika ditanya harga:
 -> jawab + ajak lanjut.`;
 
 const fallbackSettings: AppSettings = {
+  aiAutoReplyEnabled: (process.env.AI_AUTO_REPLY_ENABLED ?? "true").trim().toLowerCase() !== "false",
   aiApiUrl: process.env.AI_API_URL ?? "https://ai.sumopod.com/v1/chat/completions",
   aiApiKey: process.env.AI_API_KEY ?? "",
   aiModel: process.env.AI_MODEL ?? "seed-2-0-pro",
@@ -88,6 +89,8 @@ function sanitizeSettings(input: Partial<AppSettings>, current: AppSettings): Ap
   const nextLinkedinApiVersion = input.linkedinApiVersion?.trim() ?? current.linkedinApiVersion;
 
   return {
+    aiAutoReplyEnabled:
+      typeof input.aiAutoReplyEnabled === "boolean" ? input.aiAutoReplyEnabled : current.aiAutoReplyEnabled,
     aiApiUrl: input.aiApiUrl?.trim() ?? current.aiApiUrl,
     aiApiKey: input.aiApiKey?.trim() ?? current.aiApiKey,
     aiModel: input.aiModel?.trim() ?? current.aiModel,
@@ -175,4 +178,3 @@ export async function writeSettings(input: Partial<AppSettings>) {
 
   return sanitizeSettings(updated, fallbackSettings);
 }
-

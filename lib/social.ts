@@ -24,6 +24,14 @@ type PublishExecutionResult = {
   requestPreview: Record<string, unknown>;
 };
 
+type MetaConfig = {
+  provider: "meta";
+  graphVersion: string;
+  pageAccessToken: string;
+  actorId: string;
+  targetLabel: string;
+};
+
 const linkedInScopes = [
   "openid",
   "profile",
@@ -68,6 +76,14 @@ function buildDraftText(draft: CreatorDraft) {
 function buildDraftTextUnclipped(draft: CreatorDraft) {
   const fallback = draft.parts.map((part) => part.content).join("\n\n").trim();
   return draft.caption?.trim() || fallback || draft.topic.trim();
+}
+
+function truncateConnectionDetail(value: string, max = 240) {
+  if (value.length <= max) {
+    return value;
+  }
+
+  return `${value.slice(0, max)}...<truncated>`;
 }
 
 function graphUrl(version: string, path: string) {
@@ -149,15 +165,20 @@ async function fetchJsonOrThrow<T>(url: string, init?: RequestInit) {
   const response = await fetch(url, init);
   const raw = await response.text();
   let data: T | null = null;
+  let parseFailed = false;
 
   try {
     data = raw ? (JSON.parse(raw) as T) : null;
   } catch {
-    // ignore parse failure and keep raw
+    parseFailed = true;
   }
 
   if (!response.ok) {
     throw new Error(`${response.status}: ${raw}`);
+  }
+
+  if (parseFailed) {
+    throw new Error(`Non-JSON response (${response.status}): ${truncateConnectionDetail(raw)}`);
   }
 
   return data as T;
@@ -173,15 +194,191 @@ async function postGraph(path: string, params: URLSearchParams, settings: AppSet
   });
 }
 
-async function getGraph(path: string, fields: string, settings: AppSettings) {
-  const token = settings.metaPageAccessToken.trim();
+async function postGraphWithToken(path: string, params: URLSearchParams, settings: AppSettings, accessToken: string) {
+  const nextParams = new URLSearchParams(params);
+
+  if (!nextParams.has("access_token")) {
+    nextParams.set("access_token", accessToken);
+  }
+
+  return postGraph(path, nextParams, settings);
+}
+
+async function getGraphWithToken(path: string, fields: string, settings: AppSettings, accessToken: string) {
   const url = new URL(graphUrl(settings.metaGraphVersion.trim() || "v23.0", path));
   url.searchParams.set("fields", fields);
-  url.searchParams.set("access_token", token);
+  url.searchParams.set("access_token", accessToken);
 
   return fetchJsonOrThrow<Record<string, unknown>>(url.toString(), {
     signal: AbortSignal.timeout(20000)
   });
+}
+
+function getMetaPermissionHint() {
+  return "Gunakan user token dengan pages_show_list untuk ambil page token, lalu publish dengan Page access token yang punya pages_manage_posts dan pages_read_engagement.";
+}
+
+function normalizeMetaPublishError(error: unknown) {
+  const reason = error instanceof Error ? error.message : "Meta publish gagal.";
+
+  if (reason.includes("publish_actions")) {
+    return `${reason} Facebook profile posting sudah deprecated. ${getMetaPermissionHint()}`;
+  }
+
+  return reason;
+}
+
+function decodeUrlComponentSafe(value: string) {
+  try {
+    return decodeURIComponent(value);
+  } catch {
+    return value;
+  }
+}
+
+function normalizeMediaUrl(rawUrl: string) {
+  const trimmed = rawUrl.trim();
+
+  if (!trimmed) {
+    throw new Error("URL media kosong.");
+  }
+
+  // Some image generators return doubly-encoded presigned query params (%252F, %253D, ...).
+  // Decode once so downstream fetchers (Meta crawler) receive valid signed query values.
+  const onceDecoded = trimmed.includes("%25") ? decodeUrlComponentSafe(trimmed) : trimmed;
+
+  let parsed: URL;
+
+  try {
+    parsed = new URL(onceDecoded);
+  } catch {
+    throw new Error("URL media tidak valid.");
+  }
+
+  if (!["http:", "https:"].includes(parsed.protocol)) {
+    throw new Error("URL media harus menggunakan protocol http/https.");
+  }
+
+  const rebuilt = new URL(`${parsed.origin}${parsed.pathname}`);
+  rebuilt.hash = parsed.hash;
+
+  for (const [key, value] of parsed.searchParams.entries()) {
+    rebuilt.searchParams.append(key, decodeUrlComponentSafe(value));
+  }
+
+  return rebuilt.toString();
+}
+
+async function ensureInstagramMediaUrl(rawUrl: string) {
+  const normalizedUrl = normalizeMediaUrl(rawUrl);
+  const headers = {
+    "User-Agent":
+      "Mozilla/5.0 (compatible; MetaMediaPreflight/1.0; +https://developers.facebook.com/docs/instagram-platform)",
+    Accept: "image/*,video/*;q=0.9,*/*;q=0.8"
+  };
+
+  const methods: Array<"HEAD" | "GET"> = ["HEAD", "GET"];
+  let lastErrorMessage = "";
+
+  for (const method of methods) {
+    try {
+      const response = await fetch(normalizedUrl, {
+        method,
+        headers,
+        redirect: "follow",
+        signal: AbortSignal.timeout(20000)
+      });
+
+      const contentType = String(response.headers.get("content-type") ?? "")
+        .split(";")[0]
+        .trim()
+        .toLowerCase();
+      const isMedia = contentType.startsWith("image/") || contentType.startsWith("video/");
+
+      if (response.ok && isMedia) {
+        await response.body?.cancel().catch(() => undefined);
+        return { url: normalizedUrl, contentType };
+      }
+
+      await response.body?.cancel().catch(() => undefined);
+      lastErrorMessage = response.ok
+        ? `Content-Type media tidak valid: ${contentType || "unknown"}.`
+        : `Media URL tidak dapat diakses publik (HTTP ${response.status}).`;
+    } catch (error) {
+      lastErrorMessage = error instanceof Error ? error.message : "Media preflight gagal.";
+    }
+  }
+
+  throw new Error(
+    `Instagram tidak bisa fetch media dari URL ini. ${lastErrorMessage} Gunakan URL public langsung (200 + content-type image/video).`
+  );
+}
+
+async function fetchManagedPageAccessToken(settings: AppSettings, userAccessToken: string) {
+  const url = new URL(graphUrl(settings.metaGraphVersion.trim() || "v23.0", "/me/accounts"));
+  url.searchParams.set("fields", "id,name,access_token");
+  url.searchParams.set("access_token", userAccessToken);
+
+  const response = await fetchJsonOrThrow<{
+    data?: Array<{
+      id?: string;
+      name?: string;
+      access_token?: string;
+    }>;
+  }>(url.toString(), {
+    signal: AbortSignal.timeout(20000)
+  });
+
+  const targetPageId = settings.metaFacebookPageId.trim();
+  const page = (response.data ?? []).find((entry) => String(entry.id ?? "").trim() === targetPageId);
+  const pageAccessToken = String(page?.access_token ?? "").trim();
+
+  if (!pageAccessToken) {
+    return null;
+  }
+
+  return {
+    pageAccessToken,
+    pageName: String(page?.name ?? "").trim()
+  };
+}
+
+async function resolveMetaConfig(settings: AppSettings, platform: "facebook" | "instagram"): Promise<MetaConfig> {
+  const config = ensureMetaConfig(settings, platform);
+
+  try {
+    if (platform === "facebook") {
+      await getGraphWithToken(config.actorId, "id,name", settings, config.pageAccessToken);
+    } else {
+      await getGraphWithToken(config.actorId, "id,username", settings, config.pageAccessToken);
+    }
+
+    return config;
+  } catch (error) {
+    const resolvedPage = await fetchManagedPageAccessToken(settings, config.pageAccessToken).catch(() => null);
+
+    if (!resolvedPage) {
+      throw new Error(normalizeMetaPublishError(error));
+    }
+
+    const nextSettings = await writeSettings({
+      metaPageAccessToken: resolvedPage.pageAccessToken,
+      ...(resolvedPage.pageName ? { metaFacebookPageName: resolvedPage.pageName } : {})
+    });
+    const nextConfig = ensureMetaConfig(nextSettings, platform);
+
+    try {
+      if (platform === "facebook") {
+        await getGraphWithToken(nextConfig.actorId, "id,name", nextSettings, nextConfig.pageAccessToken);
+      } else {
+        await getGraphWithToken(nextConfig.actorId, "id,username", nextSettings, nextConfig.pageAccessToken);
+      }
+
+      return nextConfig;
+    } catch (nextError) {
+      throw new Error(normalizeMetaPublishError(nextError));
+    }
+  }
 }
 
 async function postThreads(path: string, params: URLSearchParams, settings: AppSettings) {
@@ -456,13 +653,18 @@ export async function exchangeLinkedInAuthorizationCode(code: string) {
 
 export async function testMetaConnection(): Promise<SocialConnectionResult> {
   const settings = await readSettings();
-  const config = ensureMetaConfig(settings, "facebook");
-  const pageInfo = await getGraph(config.actorId, "id,name,category", settings);
+  const config = await resolveMetaConfig(settings, "facebook");
+  const pageInfo = await getGraphWithToken(config.actorId, "id,name,category", settings, config.pageAccessToken);
 
   let instagramInfo: Record<string, unknown> | null = null;
 
   if (settings.metaInstagramBusinessId.trim()) {
-    instagramInfo = await getGraph(settings.metaInstagramBusinessId.trim(), "id,username", settings);
+    instagramInfo = await getGraphWithToken(
+      settings.metaInstagramBusinessId.trim(),
+      "id,username",
+      settings,
+      config.pageAccessToken
+    );
   }
 
   return {
@@ -738,20 +940,22 @@ export async function publishDraftToPlatform(draft: CreatorDraft): Promise<Publi
 
   if (draft.platform === "facebook" || draft.platform === "instagram") {
     const settings = await readSettings();
-    const config = ensureMetaConfig(settings, draft.platform);
+    const config = await resolveMetaConfig(settings, draft.platform);
 
     if (draft.platform === "instagram") {
       if (!draft.imageUrl) {
         throw new Error("Instagram publish memerlukan imageUrl pada draft.");
       }
 
+      const preparedMedia = await ensureInstagramMediaUrl(draft.imageUrl);
+
       const createParams = new URLSearchParams({
-        image_url: draft.imageUrl,
+        image_url: preparedMedia.url,
         caption: text,
         access_token: config.pageAccessToken
       });
 
-      const mediaContainer = await postGraph(`/${config.actorId}/media`, createParams, settings);
+      const mediaContainer = await postGraphWithToken(`/${config.actorId}/media`, createParams, settings, config.pageAccessToken);
       const creationId = String(mediaContainer.id ?? "").trim();
 
       if (!creationId) {
@@ -763,14 +967,19 @@ export async function publishDraftToPlatform(draft: CreatorDraft): Promise<Publi
         access_token: config.pageAccessToken
       });
 
-      const published = await postGraph(`/${config.actorId}/media_publish`, publishParams, settings);
+      const published = await postGraphWithToken(
+        `/${config.actorId}/media_publish`,
+        publishParams,
+        settings,
+        config.pageAccessToken
+      );
       const externalPostId = String(published.id ?? "").trim();
 
       let externalPostUrl = "";
 
       if (externalPostId) {
         try {
-          const mediaInfo = await getGraph(externalPostId, "id,permalink", settings);
+          const mediaInfo = await getGraphWithToken(externalPostId, "id,permalink", settings, config.pageAccessToken);
           externalPostUrl = String(mediaInfo.permalink ?? "").trim();
         } catch {
           // Best effort only.
@@ -786,7 +995,7 @@ export async function publishDraftToPlatform(draft: CreatorDraft): Promise<Publi
         requestPreview: {
           createMedia: {
             endpoint: `/${config.actorId}/media`,
-            image_url: draft.imageUrl,
+            image_url: preparedMedia.url,
             caption: clipText(text, 160)
           },
           publishMedia: {
@@ -797,9 +1006,7 @@ export async function publishDraftToPlatform(draft: CreatorDraft): Promise<Publi
       };
     }
 
-    const params = new URLSearchParams({
-      access_token: config.pageAccessToken
-    });
+    const params = new URLSearchParams();
 
     if (draft.imageUrl) {
       params.set("url", draft.imageUrl);
@@ -809,7 +1016,13 @@ export async function publishDraftToPlatform(draft: CreatorDraft): Promise<Publi
     }
 
     const endpoint = draft.imageUrl ? `/${config.actorId}/photos` : `/${config.actorId}/feed`;
-    const published = await postGraph(endpoint, params, settings);
+    let published: Record<string, unknown>;
+
+    try {
+      published = await postGraphWithToken(endpoint, params, settings, config.pageAccessToken);
+    } catch (error) {
+      throw new Error(normalizeMetaPublishError(error));
+    }
     const externalPostId = String(published.post_id ?? published.id ?? "").trim();
     const postIdPart = externalPostId.includes("_") ? externalPostId.split("_")[1] : externalPostId;
     const externalPostUrl = postIdPart

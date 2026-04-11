@@ -142,6 +142,25 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ ok: true, reply: creatorCommand.reply, sendResult });
     }
 
+    if (!settings.aiAutoReplyEnabled) {
+      const disabledReply = "Auto-reply AI sedang dimatikan. Pesan Anda diterima dan akan ditangani admin.";
+      const sendResult = await sendWA(from, disabledReply);
+
+      await updateMessage(log.id, {
+        reply: disabledReply,
+        status: "success"
+      });
+
+      await appendWebhookEvent({
+        stage: "ignored",
+        from,
+        message,
+        reason: "AI auto reply disabled. Sent static admin handoff reply."
+      });
+
+      return NextResponse.json({ ok: true, reply: disabledReply, sendResult, aiDisabled: true });
+    }
+
     const aiReply = await askAI(message, {
       phone: from,
       remember: true

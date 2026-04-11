@@ -5,7 +5,7 @@ import { useEffect, useState } from "react";
 import { PageHeader } from "@/components/page-header";
 import { Skeleton, SkeletonCard, SkeletonLines } from "@/components/skeleton";
 import { StatCard } from "@/components/stat-card";
-import { DashboardOverview } from "@/types";
+import { DashboardConnectionCheck, DashboardOverview } from "@/types";
 import { formatDateTime } from "@/lib/utils";
 
 type MemorySessionSummary = {
@@ -27,6 +27,24 @@ const initialState: DashboardOverview = {
   aiStatus: "missing",
   recent: []
 };
+
+const connectionOrder: Array<Pick<DashboardConnectionCheck, "key" | "label">> = [
+  { key: "ai", label: "AI Provider" },
+  { key: "wa", label: "WA Blast" },
+  { key: "embedding", label: "MongoDB / Embedding" },
+  { key: "meta", label: "Meta Facebook / Instagram" },
+  { key: "threads", label: "Threads" },
+  { key: "linkedin", label: "LinkedIn" }
+];
+
+function buildInitialChecks(): DashboardConnectionCheck[] {
+  return connectionOrder.map((item) => ({
+    ...item,
+    status: "idle",
+    summary: "Belum dicek.",
+    affectedSettings: []
+  }));
+}
 
 function Badge({ active, label }: { active: boolean; label: string }) {
   return (
@@ -113,7 +131,68 @@ function DashboardSkeleton() {
 export function DashboardClient() {
   const [data, setData] = useState<DashboardOverview>(initialState);
   const [memorySessions, setMemorySessions] = useState<MemorySessionSummary[]>([]);
+  const [connectionChecks, setConnectionChecks] = useState<DashboardConnectionCheck[]>(buildInitialChecks);
+  const [checkingConnections, setCheckingConnections] = useState(false);
   const [loading, setLoading] = useState(true);
+
+  const completedChecks = connectionChecks.filter((item) => item.status === "healthy" || item.status === "failed").length;
+  const failedChecks = connectionChecks.filter((item) => item.status === "failed").length;
+
+  async function runConnectionChecks() {
+    setCheckingConnections(true);
+    setConnectionChecks((current) =>
+      current.map((item) => ({
+        ...item,
+        status: "checking",
+        summary: "Sedang dicek...",
+        affectedSettings: []
+      }))
+    );
+
+    for (const { key } of connectionOrder) {
+      try {
+        const response = await fetch("/api/dashboard/connection-check", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ key })
+        });
+        const raw = await response.text();
+        let payload: { ok?: boolean; reason?: string; check?: DashboardConnectionCheck } | null = null;
+
+        try {
+          payload = raw ? JSON.parse(raw) : null;
+        } catch {
+          throw new Error(`Dashboard check returned non-JSON response (${response.status}): ${raw.slice(0, 180)}`);
+        }
+
+        if (!response.ok || !payload?.ok || !payload.check) {
+          throw new Error(payload?.reason || `Dashboard check failed (${response.status}).`);
+        }
+
+        const nextCheck = payload.check as DashboardConnectionCheck | undefined;
+
+        setConnectionChecks((current) =>
+          current.map((item) => (item.key === key && nextCheck ? nextCheck : item))
+        );
+      } catch (error) {
+        setConnectionChecks((current) =>
+          current.map((item) =>
+            item.key === key
+              ? {
+                  ...item,
+                  status: "failed",
+                  summary: error instanceof Error ? error.message : "Connection check gagal.",
+                  affectedSettings: item.affectedSettings,
+                  checkedAt: new Date().toISOString()
+                }
+              : item
+          )
+        );
+      }
+    }
+
+    setCheckingConnections(false);
+  }
 
   useEffect(() => {
     let active = true;
@@ -141,6 +220,7 @@ export function DashboardClient() {
     }
 
     load();
+    void runConnectionChecks();
     const timer = window.setInterval(load, 6000);
 
     return () => {
@@ -243,6 +323,85 @@ export function DashboardClient() {
         </section>
 
         <section className="space-y-4 sm:space-y-6">
+          <div className="rounded-[28px] border border-slate-200/60 bg-white p-4 shadow-panel sm:rounded-[32px] sm:p-6">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <h3 className="text-lg font-semibold text-slate-950">Connection checks</h3>
+                <p className="mt-1 text-sm text-slate-500">
+                  Test paralel dari koneksi yang tersimpan di Settings saat dashboard dibuka.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => void runConnectionChecks()}
+                disabled={checkingConnections}
+                className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-2 text-sm font-medium text-slate-800 transition hover:border-slate-950 hover:text-slate-950 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {checkingConnections ? "Checking..." : "Refresh Checks"}
+              </button>
+            </div>
+
+            <div className="mt-4 rounded-2xl bg-slate-50 px-4 py-3 text-sm text-slate-600">
+              Progress {completedChecks}/{connectionChecks.length}
+              {failedChecks > 0 ? ` . ${failedChecks} error` : completedChecks === connectionChecks.length ? " . semua sehat" : ""}
+            </div>
+
+            <div className="mt-4 space-y-3">
+              {connectionChecks.map((item) => {
+                const isHealthy = item.status === "healthy";
+                const isFailed = item.status === "failed";
+                const isChecking = item.status === "checking";
+
+                return (
+                  <div key={item.key} className="rounded-2xl bg-slate-50 px-4 py-4">
+                    <div className="flex flex-wrap items-center justify-between gap-3">
+                      <div className="flex items-center gap-3">
+                        <span
+                          className={`inline-flex h-3 w-3 rounded-full ${
+                            isHealthy
+                              ? "bg-emerald-500"
+                              : isFailed
+                                ? "bg-rose-500"
+                                : isChecking
+                                  ? "bg-amber-500"
+                                  : "bg-slate-300"
+                          }`}
+                        />
+                        <div>
+                          <p className="text-sm font-semibold text-slate-950">{item.label}</p>
+                          <p className="mt-1 text-sm text-slate-600">{item.summary}</p>
+                        </div>
+                      </div>
+                      <span
+                        className={`rounded-full px-3 py-1 text-xs font-medium ${
+                          isHealthy
+                            ? "bg-emerald-100 text-emerald-700"
+                            : isFailed
+                              ? "bg-rose-100 text-rose-700"
+                              : isChecking
+                                ? "bg-amber-100 text-amber-700"
+                                : "bg-slate-200 text-slate-600"
+                        }`}
+                      >
+                        {item.status}
+                      </span>
+                    </div>
+
+                    {item.affectedSettings.length > 0 ? (
+                      <div className="mt-3 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
+                        Setting terkait: {item.affectedSettings.join(", ")}
+                      </div>
+                    ) : null}
+
+                    {item.checkedAt ? (
+                      <p className="mt-3 text-xs text-slate-400">{formatDateTime(item.checkedAt)}</p>
+                    ) : null}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
           <div data-tour="dashboard-memory" className="rounded-[28px] border border-slate-200/60 bg-white p-4 shadow-panel sm:rounded-[32px] sm:p-6">
             <h3 className="text-lg font-semibold text-slate-950">Top memory sessions</h3>
             <div className="mt-4 space-y-3">

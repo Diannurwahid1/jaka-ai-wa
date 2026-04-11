@@ -82,3 +82,48 @@ export async function askAI(message: string, options?: AskAIOptions) {
 
   return reply;
 }
+
+export async function testAIConnection() {
+  const settings = await readSettings();
+
+  if (!settings.aiApiKey || !settings.aiApiUrl || !settings.aiModel) {
+    throw new Error("AI configuration is incomplete.");
+  }
+
+  const response = await fetch(settings.aiApiUrl, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${settings.aiApiKey}`
+    },
+    body: JSON.stringify({
+      model: settings.aiModel,
+      messages: [
+        {
+          role: "system",
+          content: "Reply with OK"
+        },
+        {
+          role: "user",
+          content: "health check"
+        }
+      ],
+      temperature: 0,
+      max_tokens: 8
+    }),
+    signal: AbortSignal.timeout(15000)
+  });
+
+  if (!response.ok) {
+    const detail = await response.text();
+    throw new Error(`AI request failed (${response.status}): ${detail}`);
+  }
+
+  const data = await response.json();
+  const reply = String(data.choices?.[0]?.message?.content ?? "").trim();
+
+  return {
+    ok: true,
+    summary: reply ? `AI merespons: ${reply.slice(0, 80)}` : "AI endpoint merespons normal."
+  };
+}

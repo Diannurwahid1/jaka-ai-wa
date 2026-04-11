@@ -11,9 +11,14 @@ import { SiteFooter } from "@/components/site-footer";
 
 export function AppShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
-  const isAuthPage = pathname === "/login";
+  const isPublicStandalonePage =
+    pathname === "/login" ||
+    pathname === "/legal" ||
+    pathname === "/privacy-policy" ||
+    pathname === "/terms-of-service" ||
+    pathname === "/data-deletion";
 
-  if (isAuthPage) {
+  if (isPublicStandalonePage) {
     return <div className="min-h-screen bg-canvas bg-glow text-ink">{children}</div>;
   }
 

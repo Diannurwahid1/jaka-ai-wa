@@ -11,17 +11,29 @@ function firstString(...values: unknown[]) {
 }
 
 function normalizeWhatsappTarget(value: string) {
-  if (typeof value !== "string") return "";
-  let cleaned = value.trim().replace(/[\s\-().]/g, "");
-  // +62 → 62
-  if (cleaned.startsWith("+")) {
-    cleaned = cleaned.slice(1);
+  if (typeof value !== "string") {
+    return "";
   }
-  // 08xxx → 628xxx (Indonesian local to international)
-  if (cleaned.startsWith("0")) {
-    cleaned = "62" + cleaned.slice(1);
+
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return "";
   }
-  return cleaned;
+
+  if (trimmed.includes("@")) {
+    return trimmed.replace(/\s+/g, "").replace(/@c\.us$/i, "@s.whatsapp.net");
+  }
+
+  const digits = trimmed.replace(/[^\d]/g, "");
+  if (!digits) {
+    return "";
+  }
+
+  if (digits.startsWith("0")) {
+    return `62${digits.slice(1)}`;
+  }
+
+  return digits;
 }
 
 function truncateForLog(value: string, max = 1200) {
@@ -52,7 +64,19 @@ export type SendWAResult = {
   httpStatus: number;
 };
 
-export async function sendWA(to: string, message: string): Promise<SendWAResult> {
+export type SendWAOptions = {
+  timeoutMs?: number;
+};
+
+function buildAbortSignal(timeoutMs?: number) {
+  if (!timeoutMs || timeoutMs <= 0) {
+    return undefined;
+  }
+
+  return AbortSignal.timeout(timeoutMs);
+}
+
+export async function sendWA(to: string, message: string, options?: SendWAOptions): Promise<SendWAResult> {
   const settings = await readSettings();
 
   if (!settings.waApiUrl || !settings.waSessionId || !settings.waToken) {
@@ -98,7 +122,7 @@ export async function sendWA(to: string, message: string): Promise<SendWAResult>
         Authorization: `Bearer ${settings.waToken}`
       },
       body: JSON.stringify(sentPayload),
-      signal: AbortSignal.timeout(120000)
+      signal: buildAbortSignal(options?.timeoutMs ?? 120000)
     });
 
     let detail = "";
@@ -154,6 +178,83 @@ export async function sendWA(to: string, message: string): Promise<SendWAResult>
     });
     throw error;
   }
+}
+
+export async function testWAConnection() {
+  const settings = await readSettings();
+
+  if (!settings.waApiUrl || !settings.waSessionId || !settings.waToken) {
+    throw new Error("WA Blast configuration is incomplete.");
+  }
+
+  const url = `${settings.waApiUrl.replace(/\/$/, "")}/messages?sessionId=${encodeURIComponent(settings.waSessionId)}`;
+  const getResponse = await fetch(url, {
+    method: "GET",
+    headers: {
+      Authorization: `Bearer ${settings.waToken}`
+    },
+    signal: AbortSignal.timeout(15000)
+  });
+
+  const getDetail = await getResponse.text();
+
+  if (getResponse.ok) {
+    return {
+      ok: true,
+      summary: `WA endpoint terjangkau. HTTP ${getResponse.status}. ${getDetail ? "Body diterima." : "Body kosong."}`
+    };
+  }
+
+  const getDetailLower = getDetail.toLowerCase();
+  const routeGetNotFound =
+    getResponse.status === 404 &&
+    (getDetailLower.includes("route get") || getDetailLower.includes("cannot get") || getDetailLower.includes("not found"));
+
+  if (!routeGetNotFound) {
+    throw new Error(`WA endpoint returned HTTP ${getResponse.status}: ${getDetail.slice(0, 240)}`);
+  }
+
+  const probePayload = {
+    to: "6280000000000",
+    type: "text",
+    text: { body: "health-check" }
+  };
+
+  const postResponse = await fetch(url, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${settings.waToken}`
+    },
+    body: JSON.stringify(probePayload),
+    signal: AbortSignal.timeout(15000)
+  });
+
+  const postDetail = await postResponse.text();
+
+  if (!postResponse.ok) {
+    const detailLower = postDetail.toLowerCase();
+    const looksLikeEndpointReachable =
+      postResponse.status === 400 ||
+      postResponse.status === 401 ||
+      postResponse.status === 403 ||
+      postResponse.status === 405 ||
+      postResponse.status === 422 ||
+      detailLower.includes("invalid") ||
+      detailLower.includes("validation") ||
+      detailLower.includes("session") ||
+      detailLower.includes("token") ||
+      detailLower.includes("recipient");
+
+    if (!looksLikeEndpointReachable) {
+      throw new Error(`WA endpoint returned HTTP ${postResponse.status}: ${postDetail.slice(0, 240)}`);
+    }
+  }
+
+  return {
+    ok: true,
+    summary: `WA endpoint POST terjangkau. GET /messages tidak didukung oleh provider ini, tetapi endpoint kirim pesan merespons HTTP ${postResponse.status}.`
+  };
 }
 
 export function extractWebhookPayload(body: any) {

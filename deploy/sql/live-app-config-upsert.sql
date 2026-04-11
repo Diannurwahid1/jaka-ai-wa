@@ -1,6 +1,7 @@
 -- Replace placeholder values before executing on a live environment.
 INSERT INTO "AppConfig" (
   "id",
+  "aiAutoReplyEnabled",
   "aiApiUrl",
   "aiApiKey",
   "aiModel",
@@ -57,6 +58,7 @@ INSERT INTO "AppConfig" (
   "updatedAt"
 ) VALUES (
   1,
+  true,
   'https://ai.sumopod.com/v1/chat/completions',
   'sk-xxxx',
   'seed-2-0-mini',
@@ -129,6 +131,7 @@ Jika ditanya harga:
   NOW(),
   NOW()
 ) ON CONFLICT ("id") DO UPDATE SET
+  "aiAutoReplyEnabled" = EXCLUDED."aiAutoReplyEnabled",
   "aiApiUrl" = EXCLUDED."aiApiUrl",
   "aiApiKey" = EXCLUDED."aiApiKey",
   "aiModel" = EXCLUDED."aiModel",

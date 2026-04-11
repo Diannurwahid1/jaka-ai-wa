@@ -8,6 +8,7 @@ import { useToast } from "@/components/toast-provider";
 import { AppSettings } from "@/types";
 
 const initialSettings: AppSettings = {
+  aiAutoReplyEnabled: true,
   aiApiUrl: "https://ai.sumopod.com/v1/chat/completions",
   aiApiKey: "",
   aiModel: "seed-2-0-pro",
@@ -570,6 +571,12 @@ export function SettingsClient() {
             </div>
 
             <div className="space-y-4">
+              <CheckboxField
+                label="Aktifkan AI Auto Reply WA"
+                checked={settings.aiAutoReplyEnabled}
+                onChange={(nextValue) => setSettings((current) => ({ ...current, aiAutoReplyEnabled: nextValue }))}
+                description="Jika dimatikan, pesan WhatsApp biasa tidak akan diproses askAI. Command action seperti /approve tetap jalan dan pesan non-command akan dibalas dengan teks handoff admin."
+              />
               <InputField
                 label="AI API URL"
                 value={settings.aiApiUrl}
@@ -920,12 +927,18 @@ export function SettingsClient() {
                 placeholder="username untuk display"
               />
               <InputField
-                label="Meta Page Access Token"
+                label="Meta Access Token"
                 value={settings.metaPageAccessToken}
                 onChange={(nextValue) => setSettings((current) => ({ ...current, metaPageAccessToken: nextValue }))}
-                placeholder="EAAB..."
+                placeholder="User token dengan pages_show_list atau Page token"
                 type="password"
               />
+              <p className="text-xs leading-5 text-slate-500">
+                Jika diisi user token, sistem akan mencoba mengambil Page access token otomatis untuk Facebook Page yang dipilih.
+                Untuk auto-post Facebook Page, app tetap butuh scope <span className="font-medium text-slate-700">pages_manage_posts</span>,
+                <span className="font-medium text-slate-700"> pages_read_engagement</span>, dan
+                <span className="font-medium text-slate-700"> pages_show_list</span>.
+              </p>
               <InputField
                 label="Token Expires At"
                 value={settings.metaPageTokenExpiresAt}
@@ -1226,5 +1239,3 @@ export function SettingsClient() {
     </div>
   );
 }
-
-

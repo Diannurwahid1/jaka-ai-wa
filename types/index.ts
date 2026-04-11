@@ -15,6 +15,7 @@ export type MessageLog = {
 };
 
 export type AppSettings = {
+  aiAutoReplyEnabled: boolean;
   aiApiUrl: string;
   aiApiKey: string;
   aiModel: string;
@@ -81,3 +82,13 @@ export type DashboardOverview = {
   recent: MessageLog[];
 };
 
+export type DashboardConnectionStatus = "idle" | "checking" | "healthy" | "failed";
+
+export type DashboardConnectionCheck = {
+  key: "ai" | "wa" | "embedding" | "meta" | "threads" | "linkedin";
+  label: string;
+  status: DashboardConnectionStatus;
+  summary: string;
+  affectedSettings: string[];
+  checkedAt?: string;
+};

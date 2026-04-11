@@ -342,10 +342,70 @@ function normalizePhoneDigits(value: string) {
   return digits;
 }
 
+function parseApprovalTargets(value?: string) {
+  return String(value ?? "")
+    .split(/[\n,;]+/)
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+function normalizeApprovalTarget(value: string) {
+  const trimmed = value.trim();
+
+  if (!trimmed) {
+    return "";
+  }
+
+  if (trimmed.includes("@")) {
+    return trimmed.replace(/\s+/g, "").toLowerCase();
+  }
+
+  return normalizePhoneDigits(trimmed);
+}
+
 function phonesMatch(left?: string, right?: string) {
-  const leftDigits = normalizePhoneDigits(left ?? "");
-  const rightDigits = normalizePhoneDigits(right ?? "");
-  return Boolean(leftDigits) && leftDigits === rightDigits;
+  const leftTargets = parseApprovalTargets(left).map(normalizeApprovalTarget).filter(Boolean);
+  const rightTargets = parseApprovalTargets(right).map(normalizeApprovalTarget).filter(Boolean);
+
+  return leftTargets.some((leftTarget) => rightTargets.includes(leftTarget));
+}
+
+function getPrimaryApprovalTarget(value?: string) {
+  return parseApprovalTargets(value)[0] ?? "";
+}
+
+async function notifyApprovalPhoneOnPublishSuccess(document: CreatorDraftDocument, result: {
+  provider: CreatorPublishProvider;
+  targetLabel: string;
+  summary: string;
+  externalPostUrl?: string;
+}) {
+  const approvalTarget = getPrimaryApprovalTarget(document.approvalPhone);
+
+  if (!approvalTarget) {
+    return;
+  }
+
+  const platformLabel = getPlatformMeta(document.platform).label;
+  const lines = [
+    `Draft ${document.draftId} (${platformLabel}) berhasil dipublish.`,
+    `Target: ${result.targetLabel}`,
+    result.summary,
+    result.externalPostUrl ? `Link: ${result.externalPostUrl}` : ""
+  ].filter(Boolean);
+
+  try {
+    await sendWA(approvalTarget, lines.join("\n"), {
+      timeoutMs: 120000
+    });
+  } catch (error) {
+    console.error("[creator.publish.notify] Failed to notify approval phone", {
+      draftId: document.draftId,
+      platform: document.platform,
+      approvalTarget,
+      error: serializeError(error)
+    });
+  }
 }
 
 function isCreatorPlatform(value: string): value is CreatorPlatform {
@@ -1309,6 +1369,7 @@ async function sendDraftToApprovalChannel(
   }
 ) {
   const approvalPhone = profile.approvalPhone?.trim();
+  const approvalTarget = getPrimaryApprovalTarget(approvalPhone);
 
   console.info("[creator.approval.send] Preparing approval send", {
     draftId: document.draftId,
@@ -1321,7 +1382,7 @@ async function sendDraftToApprovalChannel(
     approvalAttempts: document.approvalAttempts ?? 0
   });
 
-  if (!approvalPhone) {
+  if (!approvalTarget) {
     console.error("[creator.approval.send] Approval phone missing", {
       draftId: document.draftId,
       platform: document.platform,
@@ -1343,12 +1404,14 @@ async function sendDraftToApprovalChannel(
       draftId: document.draftId,
       platform: document.platform,
       attemptNumber,
-      approvalPhone,
+      approvalPhone: approvalTarget,
       messageLength: approvalMessage.length,
       messagePreview: truncateForLog(approvalMessage, 500)
     });
 
-    const sendResult = await sendWA(approvalPhone, approvalMessage);
+    const sendResult = await sendWA(approvalTarget, approvalMessage, {
+      timeoutMs: 120000
+    });
 
     await drafts.updateOne(
       { _id: document._id },
@@ -2578,6 +2641,8 @@ export async function publishCreatorDraft(
       summary: result.summary
     });
 
+    await notifyApprovalPhoneOnPublishSuccess(document, result);
+
     return {
       success: true as const,
       draft: mapDraft((await findDraftDocumentById(draftId)) as CreatorDraftDocument),
@@ -2939,16 +3004,30 @@ export async function handleCreatorApprovalCommand(from: string, message: string
     return { matched: false as const };
   }
 
+  const command = trimmed.split(/\s+/)[0].toLowerCase();
+  const scoutCommands = new Set(["/scout", "/topic-scout"]);
+  const topicListCommands = new Set(["/topics", "/topic-list"]);
+  const actionMap: Record<string, CreatorApprovalAction | undefined> = {
+    "/approve": "approve",
+    "/reject": "reject",
+    "/regen": "regen",
+    "/edit": "edit",
+    "/skip": "skip"
+  };
+  const action = actionMap[command];
+  const isCreatorCommand = Boolean(action) || scoutCommands.has(command) || topicListCommands.has(command);
+
   const profiles = await listAllCreatorProfiles();
   const matchedPlatforms = profiles.filter((profile) => phonesMatch(profile.approvalPhone, from)).map((profile) => profile.platform);
 
   if (matchedPlatforms.length === 0) {
-    return { matched: false as const };
+    return isCreatorCommand
+      ? {
+          matched: true as const,
+          reply: "Nomor ini tidak terdaftar sebagai approval phone untuk command creator."
+        }
+      : { matched: false as const };
   }
-
-  const command = trimmed.split(/\s+/)[0].toLowerCase();
-  const scoutCommands = new Set(["/scout", "/topic-scout"]);
-  const topicListCommands = new Set(["/topics", "/topic-list"]);
 
   if (scoutCommands.has(command)) {
     const { platform, query } = normalizeScoutInstruction(trimmed, matchedPlatforms);
@@ -2992,15 +3071,6 @@ export async function handleCreatorApprovalCommand(from: string, message: string
     };
   }
 
-  const actionMap: Record<string, CreatorApprovalAction | undefined> = {
-    "/approve": "approve",
-    "/reject": "reject",
-    "/regen": "regen",
-    "/edit": "edit",
-    "/skip": "skip"
-  };
-  const action = actionMap[command];
-
   if (!action) {
     return { matched: false as const };
   }
@@ -3035,4 +3105,3 @@ export async function handleCreatorApprovalCommand(from: string, message: string
     reply: result.reply
   };
 }
-
