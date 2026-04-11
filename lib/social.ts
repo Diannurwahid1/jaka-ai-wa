@@ -283,7 +283,9 @@ async function ensureInstagramMediaUrl(rawUrl: string) {
     normalizedUrl.includes("X-Amz-");
 
   if (isPresignedOrCloudCDN) {
-    normalizedUrl = `https://wsrv.nl/?url=${encodeURIComponent(normalizedUrl)}`;
+    // We enforce w=1080 (max recommended width for Instagram) and output=jpg 
+    // to prevent 'Media URI doesn't meet our requirements' errors driven by large dimension AI images.
+    normalizedUrl = `https://wsrv.nl/?url=${encodeURIComponent(normalizedUrl)}&w=1080&output=jpg`;
   }
   const headers = {
     "User-Agent":
