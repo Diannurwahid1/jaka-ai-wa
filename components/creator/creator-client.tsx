@@ -269,6 +269,16 @@ export function CreatorClient({ platform }: { platform: CreatorPlatform }) {
     limit: "20"
   });
 
+  const [topicPage, setTopicPage] = useState(1);
+  const [topicLimit, setTopicLimit] = useState<number | "all">(5);
+  const [topicStatusFilter, setTopicStatusFilter] = useState<string>("all");
+  const [expandedTopics, setExpandedTopics] = useState<Record<string, boolean>>({});
+
+  const [draftPage, setDraftPage] = useState(1);
+  const [draftLimit, setDraftLimit] = useState<number | "all">(5);
+  const [draftStatusFilter, setDraftStatusFilter] = useState<string>("all");
+  const [expandedDrafts, setExpandedDrafts] = useState<Record<string, boolean>>({});
+
   const refreshOverview = useCallback(async () => {
     const response = await fetch(`/api/creator/overview?platform=${encodeURIComponent(platform)}`, {
       cache: "no-store"
@@ -567,6 +577,14 @@ export function CreatorClient({ platform }: { platform: CreatorPlatform }) {
   }
 
   const flowStages = overview ? buildFlowStages(overview, platform) : [];
+
+  const filteredTopics = overview?.topicBriefs.filter((t) => topicStatusFilter === "all" || t.status === topicStatusFilter) || [];
+  const displayedTopics = topicLimit === "all" ? filteredTopics : filteredTopics.slice((topicPage - 1) * topicLimit, topicPage * topicLimit);
+  const totalTopicPages = topicLimit === "all" ? 1 : Math.ceil(filteredTopics.length / topicLimit);
+
+  const filteredDrafts = overview?.drafts.filter((d) => draftStatusFilter === "all" || d.status === draftStatusFilter) || [];
+  const displayedDrafts = draftLimit === "all" ? filteredDrafts : filteredDrafts.slice((draftPage - 1) * draftLimit, draftPage * draftLimit);
+  const totalDraftPages = draftLimit === "all" ? 1 : Math.ceil(filteredDrafts.length / draftLimit);
 
   return (
     <div>
@@ -879,68 +897,148 @@ export function CreatorClient({ platform }: { platform: CreatorPlatform }) {
 
             <div className="space-y-6">
               <div className={sectionClassName}>
-                <h3 className="text-lg font-semibold text-slate-950">Topic Queue</h3>
+                <div className="flex flex-wrap items-center justify-between gap-4">
+                  <h3 className="text-lg font-semibold text-slate-950">Topic Queue</h3>
+                  <div className="flex items-center gap-2">
+                    <select value={topicStatusFilter} onChange={(e) => { setTopicStatusFilter(e.target.value); setTopicPage(1); }} className="rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs text-slate-700">
+                      <option value="all">All Status</option>
+                      <option value="fresh">Fresh</option>
+                      <option value="used">Used</option>
+                      <option value="archived">Archived</option>
+                    </select>
+                    <select value={String(topicLimit)} onChange={(e) => { setTopicLimit(e.target.value === "all" ? "all" : Number(e.target.value)); setTopicPage(1); }} className="rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs text-slate-700">
+                      <option value="5">Tampil 5</option>
+                      <option value="10">Tampil 10</option>
+                      <option value="20">Tampil 20</option>
+                      <option value="all">Tampil Semua</option>
+                    </select>
+                  </div>
+                </div>
                 <div className="mt-5 space-y-4">
-                  {overview.topicBriefs.length === 0 ? (
+                  {displayedTopics.length === 0 ? (
                     <div className="rounded-3xl bg-slate-50 px-4 py-6 text-sm text-slate-500">
-                      Belum ada brief topik. Jalankan Topic Scout atau kirim command <span className="font-mono">/scout {platform}</span>.
+                      {overview?.topicBriefs.length === 0 ? `Belum ada brief topik. Jalankan Topic Scout atau kirim command /scout ${platform}.` : "Tidak ada topik yang sesuai filter."}
                     </div>
                   ) : (
-                    overview.topicBriefs.map((item: CreatorTopicBrief) => (
+                    displayedTopics.map((item: CreatorTopicBrief) => {
+                      const isExpanded = expandedTopics[item.id];
+                      return (
                       <div key={item.id} className="rounded-3xl border border-slate-100 bg-slate-50/80 p-4">
-                        <div className="flex flex-wrap items-start justify-between gap-3">
+                        <div 
+                          className="flex flex-wrap items-start justify-between gap-3 cursor-pointer group"
+                          onClick={() => setExpandedTopics(prev => ({ ...prev, [item.id]: !prev[item.id] }))}
+                        >
                           <div>
-                            <p className="text-sm font-semibold text-slate-950">{item.topic}</p>
+                            <p className="text-sm font-semibold text-slate-950 group-hover:text-indigo-600 transition-colors">{item.topic}</p>
                             <p className="mt-1 text-xs uppercase tracking-[0.18em] text-slate-400">{item.status} . {item.worker}</p>
                           </div>
-                          <div className="rounded-full bg-white px-3 py-1 text-xs font-medium text-slate-600">{formatDateTime(item.createdAt)}</div>
+                          <div className="flex items-center gap-3">
+                            <div className="rounded-full bg-white px-3 py-1 text-xs font-medium text-slate-600">{formatDateTime(item.createdAt)}</div>
+                            <span className="text-[10px] uppercase font-bold text-slate-400">
+                              {isExpanded ? "Tutup ▲" : "Buka ▼"}
+                            </span>
+                          </div>
                         </div>
-                        <p className="mt-3 text-sm leading-6 text-slate-700">{item.description}</p>
-                        <p className="mt-3 text-sm leading-6 text-slate-600"><span className="font-medium text-slate-900">Angle:</span> {item.angle}</p>
-                        <p className="mt-2 text-sm leading-6 text-slate-600"><span className="font-medium text-slate-900">Why now:</span> {item.whyNow}</p>
-                        {item.references[0] ? (
-                          <a href={item.references[0].url} target="_blank" rel="noreferrer" className="mt-4 inline-flex rounded-full border border-slate-200 px-4 py-2 text-xs font-medium text-slate-700">
-                            Open Source
-                          </a>
-                        ) : null}
+                        {isExpanded && (
+                          <div className="mt-4 border-t border-slate-200/60 pt-4">
+                            <p className="text-sm leading-6 text-slate-700">{item.description}</p>
+                            <p className="mt-3 text-sm leading-6 text-slate-600"><span className="font-medium text-slate-900">Angle:</span> {item.angle}</p>
+                            <p className="mt-2 text-sm leading-6 text-slate-600"><span className="font-medium text-slate-900">Why now:</span> {item.whyNow}</p>
+                            {item.references[0] ? (
+                              <a href={item.references[0].url} target="_blank" rel="noreferrer" className="mt-4 inline-flex rounded-full border border-slate-200 px-4 py-2 text-xs font-medium text-slate-700">
+                                Open Source
+                              </a>
+                            ) : null}
+                          </div>
+                        )}
                       </div>
-                    ))
+                      );
+                    })
                   )}
                 </div>
+                {totalTopicPages > 1 && (
+                  <div className="mt-6 flex items-center justify-between border-t border-slate-100 pt-4">
+                    <button disabled={topicPage <= 1} onClick={() => setTopicPage((p) => Math.max(1, p - 1))} className="rounded-full border border-slate-200 px-4 py-2 text-xs font-medium text-slate-700 disabled:opacity-50">Prev</button>
+                    <span className="text-xs text-slate-500">Halaman {topicPage} dari {totalTopicPages}</span>
+                    <button disabled={topicPage >= totalTopicPages} onClick={() => setTopicPage((p) => Math.min(totalTopicPages, p + 1))} className="rounded-full border border-slate-200 px-4 py-2 text-xs font-medium text-slate-700 disabled:opacity-50">Next</button>
+                  </div>
+                )}
               </div>
 
               <div className={sectionClassName}>
-                <h3 className="text-lg font-semibold text-slate-950">Draft Queue</h3>
+                <div className="flex flex-wrap items-center justify-between gap-4">
+                  <h3 className="text-lg font-semibold text-slate-950">Draft Queue</h3>
+                  <div className="flex items-center gap-2">
+                    <select value={draftStatusFilter} onChange={(e) => { setDraftStatusFilter(e.target.value); setDraftPage(1); }} className="rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs text-slate-700">
+                      <option value="all">All Status</option>
+                      <option value="draft">Draft</option>
+                      <option value="pending_approval">Pending</option>
+                      <option value="approved">Approved</option>
+                      <option value="scheduled">Scheduled</option>
+                      <option value="rejected">Rejected</option>
+                      <option value="posted">Posted</option>
+                      <option value="failed">Failed</option>
+                    </select>
+                    <select value={String(draftLimit)} onChange={(e) => { setDraftLimit(e.target.value === "all" ? "all" : Number(e.target.value)); setDraftPage(1); }} className="rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs text-slate-700">
+                      <option value="5">Tampil 5</option>
+                      <option value="10">Tampil 10</option>
+                      <option value="20">Tampil 20</option>
+                      <option value="all">Tampil Semua</option>
+                    </select>
+                  </div>
+                </div>
                 <div className="mt-5 space-y-4">
-                  {overview.drafts.length === 0 ? <div className="rounded-3xl bg-slate-50 px-4 py-6 text-sm text-slate-500">Belum ada draft creator.</div> : overview.drafts.map((draft) => (
+                  {displayedDrafts.length === 0 ? <div className="rounded-3xl bg-slate-50 px-4 py-6 text-sm text-slate-500">{overview?.drafts.length === 0 ? "Belum ada draft creator." : "Tidak ada draft yang sesuai filter."}</div> : displayedDrafts.map((draft) => {
+                  const isExpanded = expandedDrafts[draft.id];
+                  return (
                   <div key={draft.id} className="rounded-3xl border border-slate-100 bg-slate-50/80 p-4">
-                    <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div 
+                      className="flex flex-wrap items-start justify-between gap-3 cursor-pointer group"
+                      onClick={() => setExpandedDrafts(prev => ({ ...prev, [draft.id]: !prev[draft.id] }))}
+                    >
                       <div>
-                        <p className="text-sm font-semibold text-slate-950">{draft.draftId} . {draft.topic}</p>
+                        <p className="text-sm font-semibold text-slate-950 group-hover:text-indigo-600 transition-colors">{draft.draftId} . {draft.topic}</p>
                         <p className="mt-1 text-xs uppercase tracking-[0.18em] text-slate-400">{draft.role} . {draft.tone} . {formatStatus(draft.status)} . v{draft.currentVersion}</p>
                       </div>
-                      <div className="rounded-full bg-white px-3 py-1 text-xs font-medium text-slate-600">{draft.scheduledFor ? formatDateTime(draft.scheduledFor) : "Belum dijadwalkan"}</div>
+                      <div className="flex items-center gap-3">
+                        <div className="rounded-full bg-white px-3 py-1 text-xs font-medium text-slate-600">{draft.scheduledFor ? formatDateTime(draft.scheduledFor) : "Belum dijadwalkan"}</div>
+                        <span className="text-[10px] uppercase font-bold text-slate-400">
+                          {isExpanded ? "Tutup ▲" : "Buka ▼"}
+                        </span>
+                      </div>
                     </div>
-                    {isImagePlatform && draft.imageUrl ? <img src={draft.imageUrl} alt={draft.topic} className="mt-4 h-56 w-full rounded-3xl object-cover" /> : null}
-                    {isImagePlatform && draft.imageError ? <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm leading-6 text-amber-900">{draft.imageError}</div> : null}
-                    {draft.caption ? <div className="mt-4 whitespace-pre-wrap rounded-2xl bg-white px-4 py-3 text-sm leading-6 text-slate-700">{draft.caption}</div> : null}
-                    <div className="mt-4 space-y-3">{draft.parts.map((part) => <div key={`${draft.id}-${part.index}`} className="rounded-2xl bg-white px-4 py-3"><p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">{part.type}</p><p className="mt-2 text-sm leading-6 text-slate-700">{part.content}</p></div>)}</div>
-                    {isImagePlatform && draft.visualPrompt ? <div className="mt-4 rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm leading-6 text-slate-600"><span className="font-medium text-slate-900">Visual prompt:</span> {draft.visualPrompt}</div> : null}
-                    {draft.lastApprovalError ? <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm leading-6 text-amber-900"><span className="font-medium">Approval:</span> {draft.lastApprovalError}</div> : null}
-                    {draft.lastPublishSummary ? <div className="mt-4 rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm leading-6 text-slate-600"><span className="font-medium text-slate-900">Publish:</span> {draft.lastPublishSummary}</div> : null}
-                    {draft.externalPostUrl ? <a href={draft.externalPostUrl} target="_blank" rel="noreferrer" className="mt-4 inline-flex rounded-full border border-emerald-200 px-4 py-2 text-xs font-medium text-emerald-700">Open Published Post</a> : null}
-                    <div className="mt-4 flex flex-wrap gap-2">
-                      <button type="button" disabled={busyId === draft.draftId} onClick={() => void handleDraftAction(draft, "approve")} className="rounded-full bg-slate-950 px-4 py-2 text-xs font-medium text-white disabled:opacity-60">Approve</button>
-                      <button type="button" disabled={busyId === draft.draftId} onClick={() => void handleDraftAction(draft, "regen")} className="rounded-full border border-slate-200 px-4 py-2 text-xs font-medium text-slate-700 disabled:opacity-60">Regen</button>
-                      <button type="button" disabled={busyId === draft.draftId} onClick={() => void handleDraftAction(draft, "edit")} className="rounded-full border border-slate-200 px-4 py-2 text-xs font-medium text-slate-700 disabled:opacity-60">Edit</button>
-                      <button type="button" disabled={busyId === draft.draftId} onClick={() => void handleDraftAction(draft, "reject")} className="rounded-full border border-rose-200 px-4 py-2 text-xs font-medium text-rose-600 disabled:opacity-60">Reject</button>
-                      <button type="button" disabled={busyId === draft.draftId} onClick={() => void handleDraftAction(draft, "send")} className="rounded-full border border-emerald-200 px-4 py-2 text-xs font-medium text-emerald-700 disabled:opacity-60">Send Approval</button>
-                      <button type="button" disabled={busyId === draft.draftId} onClick={() => void handleDraftAction(draft, "simulate_publish")} className="rounded-full border border-slate-200 px-4 py-2 text-xs font-medium text-slate-700 disabled:opacity-60">Simulate Upload</button>
-                      <button type="button" disabled={busyId === draft.draftId} onClick={() => void handleDraftAction(draft, "publish")} className="rounded-full border border-indigo-200 px-4 py-2 text-xs font-medium text-indigo-700 disabled:opacity-60">Publish Now</button>
-                    </div>
+                    {isExpanded && (
+                      <div className="mt-4 border-t border-slate-200/60 pt-4">
+                        {isImagePlatform && draft.imageUrl ? <img src={draft.imageUrl} alt={draft.topic} className="mt-4 h-56 w-full rounded-3xl object-cover" /> : null}
+                        {isImagePlatform && draft.imageError ? <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm leading-6 text-amber-900">{draft.imageError}</div> : null}
+                        {draft.caption ? <div className="mt-4 whitespace-pre-wrap rounded-2xl bg-white px-4 py-3 text-sm leading-6 text-slate-700">{draft.caption}</div> : null}
+                        <div className="mt-4 space-y-3">{draft.parts.map((part) => <div key={`${draft.id}-${part.index}`} className="rounded-2xl bg-white px-4 py-3"><p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">{part.type}</p><p className="mt-2 text-sm leading-6 text-slate-700">{part.content}</p></div>)}</div>
+                        {isImagePlatform && draft.visualPrompt ? <div className="mt-4 rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm leading-6 text-slate-600"><span className="font-medium text-slate-900">Visual prompt:</span> {draft.visualPrompt}</div> : null}
+                        {draft.lastApprovalError ? <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm leading-6 text-amber-900"><span className="font-medium">Approval:</span> {draft.lastApprovalError}</div> : null}
+                        {draft.lastPublishSummary ? <div className="mt-4 rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm leading-6 text-slate-600"><span className="font-medium text-slate-900">Publish:</span> {draft.lastPublishSummary}</div> : null}
+                        {draft.externalPostUrl ? <a href={draft.externalPostUrl} target="_blank" rel="noreferrer" className="mt-4 inline-flex rounded-full border border-emerald-200 px-4 py-2 text-xs font-medium text-emerald-700">Open Published Post</a> : null}
+                        <div className="mt-4 flex flex-wrap gap-2">
+                           <button type="button" disabled={busyId === draft.draftId} onClick={() => void handleDraftAction(draft, "approve")} className="rounded-full bg-slate-950 px-4 py-2 text-xs font-medium text-white disabled:opacity-60">Approve</button>
+                           <button type="button" disabled={busyId === draft.draftId} onClick={() => void handleDraftAction(draft, "regen")} className="rounded-full border border-slate-200 px-4 py-2 text-xs font-medium text-slate-700 disabled:opacity-60">Regen</button>
+                           <button type="button" disabled={busyId === draft.draftId} onClick={() => void handleDraftAction(draft, "edit")} className="rounded-full border border-slate-200 px-4 py-2 text-xs font-medium text-slate-700 disabled:opacity-60">Edit</button>
+                           <button type="button" disabled={busyId === draft.draftId} onClick={() => void handleDraftAction(draft, "reject")} className="rounded-full border border-rose-200 px-4 py-2 text-xs font-medium text-rose-600 disabled:opacity-60">Reject</button>
+                           <button type="button" disabled={busyId === draft.draftId} onClick={() => void handleDraftAction(draft, "send")} className="rounded-full border border-emerald-200 px-4 py-2 text-xs font-medium text-emerald-700 disabled:opacity-60">Send Approval</button>
+                           <button type="button" disabled={busyId === draft.draftId} onClick={() => void handleDraftAction(draft, "simulate_publish")} className="rounded-full border border-slate-200 px-4 py-2 text-xs font-medium text-slate-700 disabled:opacity-60">Simulate Upload</button>
+                           <button type="button" disabled={busyId === draft.draftId} onClick={() => void handleDraftAction(draft, "publish")} className="rounded-full border border-indigo-200 px-4 py-2 text-xs font-medium text-indigo-700 disabled:opacity-60">Publish Now</button>
+                        </div>
+                      </div>
+                    )}
                   </div>
-                  ))}
+                  );
+                  })}
                 </div>
+                {totalDraftPages > 1 && (
+                  <div className="mt-6 flex items-center justify-between border-t border-slate-100 pt-4">
+                    <button disabled={draftPage <= 1} onClick={() => setDraftPage((p) => Math.max(1, p - 1))} className="rounded-full border border-slate-200 px-4 py-2 text-xs font-medium text-slate-700 disabled:opacity-50">Prev</button>
+                    <span className="text-xs text-slate-500">Halaman {draftPage} dari {totalDraftPages}</span>
+                    <button disabled={draftPage >= totalDraftPages} onClick={() => setDraftPage((p) => Math.min(totalDraftPages, p + 1))} className="rounded-full border border-slate-200 px-4 py-2 text-xs font-medium text-slate-700 disabled:opacity-50">Next</button>
+                  </div>
+                )}
               </div>
             </div>
           </div>

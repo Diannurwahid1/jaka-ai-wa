@@ -2197,9 +2197,9 @@ export async function getCreatorOverview(platformInput?: string): Promise<Creato
   const platform = normalizePlatform(platformInput);
   const [profile, drafts, publishLogs, topicBriefs] = await Promise.all([
     getCreatorProfile(platform),
-    listCreatorDrafts(platform, 18),
+    listCreatorDrafts(platform, 200),
     listCreatorPublishLogs(platform, 10),
-    listCreatorTopicBriefs(platform, { limit: 12 })
+    listCreatorTopicBriefs(platform, { limit: 200 })
   ]);
 
   return {
