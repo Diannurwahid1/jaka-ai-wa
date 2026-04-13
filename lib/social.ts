@@ -374,6 +374,24 @@ async function fetchManagedPageAccessToken(settings: AppSettings, userAccessToke
 async function resolveMetaConfig(settings: AppSettings, platform: "facebook" | "instagram"): Promise<MetaConfig> {
   const config = ensureMetaConfig(settings, platform);
 
+  // If the provided token is a user token, querying page details via getGraphWithToken might still succeed 
+  // without complaining. However, publishing will later fail with 'publish_actions is deprecated'.
+  // We proactively try to fetch the managed page access token first.
+  const resolvedPage = await fetchManagedPageAccessToken(settings, config.pageAccessToken).catch(() => null);
+
+  if (resolvedPage && resolvedPage.pageAccessToken !== config.pageAccessToken) {
+    const nextSettings = await writeSettings({
+      metaPageAccessToken: resolvedPage.pageAccessToken,
+      ...(resolvedPage.pageName ? { metaFacebookPageName: resolvedPage.pageName } : {})
+    });
+    
+    config.pageAccessToken = nextSettings.metaPageAccessToken.trim();
+    config.targetLabel = nextSettings.metaFacebookPageName.trim() || config.targetLabel;
+    
+    // Also inject back to the current settings object for downstream use
+    Object.assign(settings, nextSettings);
+  }
+
   try {
     if (platform === "facebook") {
       await getGraphWithToken(config.actorId, "id,name", settings, config.pageAccessToken);
@@ -383,29 +401,7 @@ async function resolveMetaConfig(settings: AppSettings, platform: "facebook" | "
 
     return config;
   } catch (error) {
-    const resolvedPage = await fetchManagedPageAccessToken(settings, config.pageAccessToken).catch(() => null);
-
-    if (!resolvedPage) {
-      throw new Error(normalizeMetaPublishError(error));
-    }
-
-    const nextSettings = await writeSettings({
-      metaPageAccessToken: resolvedPage.pageAccessToken,
-      ...(resolvedPage.pageName ? { metaFacebookPageName: resolvedPage.pageName } : {})
-    });
-    const nextConfig = ensureMetaConfig(nextSettings, platform);
-
-    try {
-      if (platform === "facebook") {
-        await getGraphWithToken(nextConfig.actorId, "id,name", nextSettings, nextConfig.pageAccessToken);
-      } else {
-        await getGraphWithToken(nextConfig.actorId, "id,username", nextSettings, nextConfig.pageAccessToken);
-      }
-
-      return nextConfig;
-    } catch (nextError) {
-      throw new Error(normalizeMetaPublishError(nextError));
-    }
+    throw new Error(normalizeMetaPublishError(error));
   }
 }
 
