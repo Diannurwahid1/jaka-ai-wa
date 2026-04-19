@@ -8,7 +8,10 @@
     "start": "next start",
     "lint": "next lint",
     "live:r2:inject:dry": "node scripts/inject-r2-settings-live.mjs",
-    "live:r2:inject": "node scripts/inject-r2-settings-live.mjs --execute"
+    "live:r2:inject": "node scripts/inject-r2-settings-live.mjs --execute",
+    "prisma:migrate:deploy": "prisma migrate deploy",
+    "live:r2:inject:prisma:dry": "node scripts/inject-r2-settings-live-prisma.mjs",
+    "live:r2:inject:prisma": "node scripts/inject-r2-settings-live-prisma.mjs --execute"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1032.0",
