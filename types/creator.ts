@@ -88,6 +88,7 @@ export type CreatorDraftVersion = {
   caption?: string;
   visualPrompt?: string;
   imageUrl?: string;
+  r2ImageUrl?: string;
   imageError?: string;
   createdAt: string;
 };
@@ -105,6 +106,7 @@ export type CreatorDraft = {
   hookStyle: string;
   visualPrompt?: string;
   imageUrl?: string;
+  r2ImageUrl?: string;
   imageProvider?: string;
   imageError?: string;
   imageAspectRatio?: CreatorAspectRatio;

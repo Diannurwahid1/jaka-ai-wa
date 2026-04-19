@@ -2,6 +2,7 @@ import { ObjectId } from "mongodb";
 
 import { generateBytePlusImage, hasBytePlusImageConfig } from "@/lib/byteplus";
 import { getMongoDatabase } from "@/lib/mongodb";
+import { persistGeneratedImageToR2 } from "@/lib/r2";
 import { readSettings } from "@/lib/settings";
 import { publishDraftToPlatform, simulatePlatformPublish } from "@/lib/social";
 import { sendWA } from "@/lib/wa";
@@ -83,6 +84,7 @@ type CreatorDraftVersionDocument = {
   caption?: string;
   visualPrompt?: string;
   imageUrl?: string;
+  r2ImageUrl?: string;
   imageError?: string;
   createdAt: Date;
 };
@@ -100,6 +102,7 @@ type CreatorDraftDocument = {
   hookStyle: string;
   visualPrompt?: string;
   imageUrl?: string;
+  r2ImageUrl?: string;
   imageProvider?: string;
   imageError?: string;
   imageAspectRatio?: CreatorAspectRatio;
@@ -577,6 +580,25 @@ function buildDraftIdentifier(platform: CreatorPlatform) {
   };
 
   return `${prefixMap[platform]}-${Date.now().toString().slice(-6)}`;
+}
+
+function requiresPersistentImage(platform: CreatorPlatform, profile: CreatorProfile) {
+  return getPlatformMeta(platform).requiresImage && profile.generateImages;
+}
+
+function resolveDraftStatusForImage(
+  platform: CreatorPlatform,
+  profile: CreatorProfile,
+  image: {
+    r2ImageUrl?: string;
+    imageError?: string;
+  }
+): CreatorDraft["status"] {
+  if (requiresPersistentImage(platform, profile) && !image.r2ImageUrl) {
+    return "failed";
+  }
+
+  return "draft";
 }
 
 type TopicScoutSearchHit = {
@@ -1074,6 +1096,7 @@ function mapDraft(document: CreatorDraftDocument): CreatorDraft {
     hookStyle: document.hookStyle,
     visualPrompt: document.visualPrompt,
     imageUrl: document.imageUrl,
+    r2ImageUrl: document.r2ImageUrl,
     imageProvider: document.imageProvider,
     imageError: document.imageError,
     imageAspectRatio: document.imageAspectRatio,
@@ -1088,6 +1111,7 @@ function mapDraft(document: CreatorDraftDocument): CreatorDraft {
       caption: version.caption,
       visualPrompt: version.visualPrompt,
       imageUrl: version.imageUrl,
+      r2ImageUrl: version.r2ImageUrl,
       imageError: version.imageError,
       createdAt: version.createdAt.toISOString()
     })),
@@ -1236,7 +1260,7 @@ function formatDraftForApproval(draft: CreatorDraft) {
       : [
           draft.caption || buildCaptionFromParts(draft.parts),
           draft.visualPrompt ? `\nVisual: ${draft.visualPrompt}` : "",
-          draft.imageUrl ? `\nImage: ${draft.imageUrl}` : ""
+          draft.r2ImageUrl ? `\nImage: ${draft.r2ImageUrl}` : ""
         ].filter(Boolean);
 
   return [
@@ -1913,6 +1937,7 @@ async function generateVisualIfNeeded(
   if (!getPlatformMeta(platform).requiresImage || !profile.generateImages) {
     return {
       imageUrl: undefined as string | undefined,
+      r2ImageUrl: undefined as string | undefined,
       imageProvider: undefined as string | undefined,
       imageError: undefined as string | undefined
     };
@@ -1921,6 +1946,7 @@ async function generateVisualIfNeeded(
   if (!(await hasBytePlusImageConfig())) {
     return {
       imageUrl: undefined as string | undefined,
+      r2ImageUrl: undefined as string | undefined,
       imageProvider: undefined as string | undefined,
       imageError: "BytePlus belum dikonfigurasi di root Settings."
     };
@@ -1936,15 +1962,24 @@ async function generateVisualIfNeeded(
       prompt: visualPrompt,
       size: aspectRatioToImageSize(profile.imageAspectRatio)
     });
+    const persistedImage = await persistGeneratedImageToR2(imageUrl);
 
     return {
       imageUrl,
+      r2ImageUrl: persistedImage.url,
       imageProvider: "byteplus",
       imageError: undefined as string | undefined
     };
   } catch (error) {
+    console.error("[creator.image] Failed to persist generated image", {
+      platform,
+      topic: draft.topic,
+      error: serializeError(error)
+    });
+
     return {
       imageUrl: undefined as string | undefined,
+      r2ImageUrl: undefined as string | undefined,
       imageProvider: "byteplus",
       imageError: error instanceof Error ? error.message : "BytePlus image generation failed."
     };
@@ -2033,12 +2068,13 @@ Return JSON:
     topic: String(parsed.topic ?? draft.topic).trim() || draft.topic,
     hookStyle: String(parsed.hookStyle ?? draft.hookStyle).trim() || draft.hookStyle,
     caption,
-      visualPrompt,
-      imageUrl: image.imageUrl,
-      imageProvider: image.imageProvider,
-      imageError: image.imageError,
-      parts
-    };
+    visualPrompt,
+    imageUrl: image.imageUrl,
+    r2ImageUrl: image.r2ImageUrl,
+    imageProvider: image.imageProvider,
+    imageError: image.imageError,
+    parts
+  };
 }
 
 function normalizeActionInstruction(message: string, action: CreatorApprovalAction) {
@@ -2334,11 +2370,12 @@ export async function simulateCreatorDrafts(input?: {
       hookStyle: String(generatedDraft.hookStyle ?? "curiosity").trim() || "curiosity",
       visualPrompt,
       imageUrl: image.imageUrl,
+      r2ImageUrl: image.r2ImageUrl,
       imageProvider: image.imageProvider,
       imageError: image.imageError,
       imageAspectRatio: meta.requiresImage && profile.generateImages ? profile.imageAspectRatio : undefined,
       caption,
-      status: "draft",
+      status: resolveDraftStatusForImage(platform, profile, image),
       currentVersion: 1,
       parts,
       versions: [
@@ -2348,6 +2385,7 @@ export async function simulateCreatorDrafts(input?: {
           caption,
           visualPrompt,
           imageUrl: image.imageUrl,
+          r2ImageUrl: image.r2ImageUrl,
           imageError: image.imageError,
           createdAt: previewTime.toISOString()
         }
@@ -2507,11 +2545,12 @@ export async function generateCreatorDrafts(input?: {
       hookStyle: String(generatedDraft.hookStyle ?? "curiosity").trim() || "curiosity",
       visualPrompt,
       imageUrl: image.imageUrl,
+      r2ImageUrl: image.r2ImageUrl,
       imageProvider: image.imageProvider,
       imageError: image.imageError,
       imageAspectRatio: meta.requiresImage && profile.generateImages ? profile.imageAspectRatio : undefined,
       caption,
-      status: "draft",
+      status: resolveDraftStatusForImage(platform, profile, image),
       currentVersion: 1,
       parts,
       versions: [
@@ -2521,6 +2560,7 @@ export async function generateCreatorDrafts(input?: {
           caption,
           visualPrompt,
           imageUrl: image.imageUrl,
+          r2ImageUrl: image.r2ImageUrl,
           imageError: image.imageError,
           createdAt
         }
@@ -2540,7 +2580,7 @@ export async function generateCreatorDrafts(input?: {
     createdDrafts.push(mappedDraft);
     await markTopicBriefUsed(generated.topicBriefId, mappedDraft.draftId);
 
-    if (autoSend && profile.approvalPhone) {
+    if (document.status === "draft" && autoSend && profile.approvalPhone) {
       await sendDraftToApprovalChannel(document, profile, { source: "dashboard" });
     }
   }
@@ -2934,12 +2974,13 @@ export async function applyCreatorDraftAction(
           caption: nextDraft.caption,
           visualPrompt: nextDraft.visualPrompt,
           imageUrl: nextDraft.imageUrl,
+          r2ImageUrl: nextDraft.r2ImageUrl,
           imageProvider: nextDraft.imageProvider,
           imageError: nextDraft.imageError,
           imageAspectRatio: profile.generateImages ? profile.imageAspectRatio : undefined,
           parts: nextDraft.parts,
           currentVersion: nextVersion,
-          status: "draft",
+          status: resolveDraftStatusForImage(document.platform, profile, nextDraft),
           approvalPhone: profile.approvalPhone || undefined,
           updatedAt: actionTime
         },
@@ -2961,6 +3002,7 @@ export async function applyCreatorDraftAction(
             caption: nextDraft.caption,
             visualPrompt: nextDraft.visualPrompt,
             imageUrl: nextDraft.imageUrl,
+            r2ImageUrl: nextDraft.r2ImageUrl,
             imageError: nextDraft.imageError,
             createdAt: actionTime
           }
@@ -2970,16 +3012,18 @@ export async function applyCreatorDraftAction(
 
     await logApprovalAction(draftId, document.platform, action, source, options?.instruction, options?.phone);
 
-    if (profile.approvalPhone) {
+    const refreshedDocument = (await drafts.findOne({ _id: document._id })) as CreatorDraftDocument;
+
+    if (refreshedDocument.status === "draft" && profile.approvalPhone) {
       const sendResult = await sendDraftToApprovalChannel(
-        (await drafts.findOne({ _id: document._id })) as CreatorDraftDocument,
+        refreshedDocument,
         profile,
         { source, phone: options?.phone }
       );
 
       if (!sendResult.success) {
         return {
-          draft: mapDraft((await drafts.findOne({ _id: document._id })) as CreatorDraftDocument),
+          draft: mapDraft(refreshedDocument),
           reply: `Draft ${draftId} diperbarui, tapi kirim ke approval gagal: ${sendResult.reason}`
         };
       }
@@ -2989,8 +3033,12 @@ export async function applyCreatorDraftAction(
       draft: mapDraft((await drafts.findOne({ _id: document._id })) as CreatorDraftDocument),
       reply:
         action === "edit"
-          ? `Draft ${draftId} (${getPlatformMeta(document.platform).label}) sudah dirombak sesuai instruksi dan versi baru sudah dikirim.`
-          : `Draft ${draftId} (${getPlatformMeta(document.platform).label}) sudah diregenerate dan versi baru sudah dikirim.`
+          ? refreshedDocument.status === "failed"
+            ? `Draft ${draftId} (${getPlatformMeta(document.platform).label}) berhasil direvisi, tetapi upload image ke R2 gagal sehingga draft ditandai failed.`
+            : `Draft ${draftId} (${getPlatformMeta(document.platform).label}) sudah dirombak sesuai instruksi dan versi baru sudah dikirim.`
+          : refreshedDocument.status === "failed"
+            ? `Draft ${draftId} (${getPlatformMeta(document.platform).label}) sudah diregenerate, tetapi upload image ke R2 gagal sehingga draft ditandai failed.`
+            : `Draft ${draftId} (${getPlatformMeta(document.platform).label}) sudah diregenerate dan versi baru sudah dikirim.`
     };
   }
 

@@ -29,6 +29,11 @@ const initialSettings: AppSettings = {
   bytePlusApiKey: "",
   bytePlusBaseUrl: "https://ark.ap-southeast.bytepluses.com/api/v3",
   bytePlusImageModel: "seedream-4-5-251128",
+  r2AccessKey: "",
+  r2SecretKey: "",
+  r2Bucket: "",
+  r2Endpoint: "",
+  r2PublicUrl: "",
   topicScoutSearchApiKey: "",
   topicScoutSearchUrl: "https://search.infoquest.bytepluses.com",
   topicScoutModelApiKey: "",
@@ -217,10 +222,12 @@ export function SettingsClient() {
   const [testingMeta, setTestingMeta] = useState(false);
   const [testingThreads, setTestingThreads] = useState(false);
   const [testingLinkedIn, setTestingLinkedIn] = useState(false);
+  const [testingR2, setTestingR2] = useState(false);
   const [runningPublisher, setRunningPublisher] = useState(false);
   const [metaTestResult, setMetaTestResult] = useState<string | null>(null);
   const [threadsTestResult, setThreadsTestResult] = useState<string | null>(null);
   const [linkedinTestResult, setLinkedinTestResult] = useState<string | null>(null);
+  const [r2TestResult, setR2TestResult] = useState<string | null>(null);
   const [securityLoading, setSecurityLoading] = useState(true);
   const [securitySaving, setSecuritySaving] = useState(false);
   const [security, setSecurity] = useState<{
@@ -435,6 +442,37 @@ export function SettingsClient() {
     }
   }
 
+  async function handleTestR2Connection() {
+    setTestingR2(true);
+    setR2TestResult(null);
+
+    try {
+      await persistSettings();
+      const response = await fetch("/api/settings/r2-test", { method: "POST" });
+      const payload = await response.json();
+
+      if (!response.ok || !payload.ok) {
+        throw new Error(payload.reason || "Gagal mengetes koneksi R2");
+      }
+
+      const result = payload.result as {
+        summary: string;
+        bucket: string;
+        publicUrl: string;
+      };
+
+      const summary = `${result.summary} Bucket: ${result.bucket} | Public URL: ${result.publicUrl}`;
+      setR2TestResult(summary);
+      pushToast({ title: "Koneksi R2 valid", tone: "success" });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Gagal mengetes koneksi R2";
+      setR2TestResult(message);
+      pushToast({ title: message, tone: "error" });
+    } finally {
+      setTestingR2(false);
+    }
+  }
+
   async function handleTestThreadsConnection() {
     setTestingThreads(true);
     setThreadsTestResult(null);
@@ -557,7 +595,7 @@ export function SettingsClient() {
       <PageHeader
         eyebrow="Configuration"
         title="Settings"
-        description="Simpan konfigurasi AI, WA Blast, MongoDB, dan embedding agar memory serta RAG bisa jalan dari runtime app tanpa bergantung ke env shell manual."
+        description="Simpan konfigurasi AI, WA Blast, MongoDB, embedding, dan storage runtime ke database agar modul app jalan tanpa bergantung ke env shell manual."
       />
 
       {loading ? <SettingsSkeleton /> : (
@@ -871,6 +909,67 @@ export function SettingsClient() {
                   placeholder="tren terbaru hotel indonesia direct booking OTA hospitality marketing"
                 />
               </label>
+            </div>
+          </section>
+
+          <section className="rounded-[32px] border border-slate-200/60 bg-white p-6 shadow-panel">
+            <div className="mb-5">
+              <h3 className="text-lg font-semibold text-slate-950">Cloudflare R2 Config</h3>
+              <p className="mt-1 text-sm text-slate-500">
+                Dipakai untuk menyimpan image hasil BytePlus ke storage permanen sebelum draft disimpan dan dipublish.
+              </p>
+            </div>
+
+            <div className="space-y-4">
+              <InputField
+                label="R2 Access Key"
+                value={settings.r2AccessKey}
+                onChange={(nextValue) => setSettings((current) => ({ ...current, r2AccessKey: nextValue }))}
+                placeholder="Cloudflare R2 access key"
+                type="password"
+              />
+              <InputField
+                label="R2 Secret Key"
+                value={settings.r2SecretKey}
+                onChange={(nextValue) => setSettings((current) => ({ ...current, r2SecretKey: nextValue }))}
+                placeholder="Cloudflare R2 secret key"
+                type="password"
+              />
+              <InputField
+                label="R2 Bucket"
+                value={settings.r2Bucket}
+                onChange={(nextValue) => setSettings((current) => ({ ...current, r2Bucket: nextValue }))}
+                placeholder="nama-bucket"
+              />
+              <InputField
+                label="R2 Endpoint"
+                value={settings.r2Endpoint}
+                onChange={(nextValue) => setSettings((current) => ({ ...current, r2Endpoint: nextValue }))}
+                placeholder="https://<accountid>.r2.cloudflarestorage.com"
+              />
+              <InputField
+                label="R2 Public URL"
+                value={settings.r2PublicUrl}
+                onChange={(nextValue) => setSettings((current) => ({ ...current, r2PublicUrl: nextValue }))}
+                placeholder="https://cdn.example.com"
+              />
+              <div className="rounded-2xl bg-slate-50 px-4 py-3 text-sm leading-6 text-slate-600">
+                Draft image yang akan dipublish harus berasal dari prefix <span className="font-medium text-slate-900">R2 Public URL</span>.
+                URL Ark asli tetap opsional dan hanya disimpan untuk debug/source trace.
+              </div>
+
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+                <button
+                  type="button"
+                  onClick={() => void handleTestR2Connection()}
+                  disabled={testingR2 || saving || loading}
+                  className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-medium text-slate-800 transition hover:border-slate-950 hover:text-slate-950 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {testingR2 ? "Testing..." : "Test R2 Connection"}
+                </button>
+
+                {r2TestResult ? <p className="text-sm leading-6 text-slate-600">{r2TestResult}</p> : null}
+              </div>
             </div>
           </section>
 

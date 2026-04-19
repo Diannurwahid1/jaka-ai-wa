@@ -136,6 +136,10 @@ function formatStatus(status: CreatorDraft["status"]) {
   return status.replace(/_/g, " ");
 }
 
+function getDisplayImageUrl(draft: CreatorDraft) {
+  return draft.r2ImageUrl?.trim() || draft.imageUrl?.trim() || "";
+}
+
 function buildFlowStages(overview: CreatorOverview, platform: CreatorPlatform) {
   const isImagePlatform = platformMeta[platform].imageFriendly;
   const freshTopics = overview.topicBriefs.filter((item) => item.status === "fresh").length;
@@ -856,9 +860,13 @@ export function CreatorClient({ platform }: { platform: CreatorPlatform }) {
                 ) : (
                   playgroundDrafts.map((draft, index) => (
                     <div key={draft.id} className="rounded-3xl border border-slate-100 bg-slate-50/80 p-4">
+                      {(() => {
+                        const displayImageUrl = getDisplayImageUrl(draft);
+                        return (
+                          <>
                       <p className="text-sm font-semibold text-slate-950">{draft.topic}</p>
                       <p className="mt-1 text-xs uppercase tracking-[0.18em] text-slate-400">{draft.role} . {draft.tone} . {draft.objective}</p>
-                      {isImagePlatform && draft.imageUrl ? <img src={draft.imageUrl} alt={draft.topic} className="mt-4 h-56 w-full rounded-3xl object-cover" /> : null}
+                      {isImagePlatform && displayImageUrl ? <img src={displayImageUrl} alt={draft.topic} className="mt-4 h-56 w-full rounded-3xl object-cover" /> : null}
                       {isImagePlatform && draft.imageError ? <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm leading-6 text-amber-900">{draft.imageError}</div> : null}
                       {draft.caption ? <div className="mt-4 whitespace-pre-wrap rounded-2xl bg-white px-4 py-3 text-sm leading-6 text-slate-700">{draft.caption}</div> : null}
                       <div className="mt-4 space-y-3">{draft.parts.map((part) => <div key={`${draft.id}-${part.index}`} className="rounded-2xl bg-white px-4 py-3"><p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">{part.type}</p><p className="mt-2 text-sm leading-6 text-slate-700">{part.content}</p></div>)}</div>
@@ -872,6 +880,9 @@ export function CreatorClient({ platform }: { platform: CreatorPlatform }) {
                           <pre className="mt-3 overflow-x-auto whitespace-pre-wrap rounded-2xl bg-slate-50 px-3 py-3 text-xs text-slate-600">{JSON.stringify(playgroundSimulations[index].requestPreview, null, 2)}</pre>
                         </div>
                       ) : null}
+                          </>
+                        );
+                      })()}
                     </div>
                   ))
                 )}
@@ -992,6 +1003,10 @@ export function CreatorClient({ platform }: { platform: CreatorPlatform }) {
                   const isExpanded = expandedDrafts[draft.id];
                   return (
                   <div key={draft.id} className="rounded-3xl border border-slate-100 bg-slate-50/80 p-4">
+                    {(() => {
+                      const displayImageUrl = getDisplayImageUrl(draft);
+                      return (
+                        <>
                     <div 
                       className="flex flex-wrap items-start justify-between gap-3 cursor-pointer group"
                       onClick={() => setExpandedDrafts(prev => ({ ...prev, [draft.id]: !prev[draft.id] }))}
@@ -1009,8 +1024,13 @@ export function CreatorClient({ platform }: { platform: CreatorPlatform }) {
                     </div>
                     {isExpanded && (
                       <div className="mt-4 border-t border-slate-200/60 pt-4">
-                        {isImagePlatform && draft.imageUrl ? <img src={draft.imageUrl} alt={draft.topic} className="mt-4 h-56 w-full rounded-3xl object-cover" /> : null}
+                        {isImagePlatform && displayImageUrl ? <img src={displayImageUrl} alt={draft.topic} className="mt-4 h-56 w-full rounded-3xl object-cover" /> : null}
                         {isImagePlatform && draft.imageError ? <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm leading-6 text-amber-900">{draft.imageError}</div> : null}
+                        {isImagePlatform && draft.r2ImageUrl ? (
+                          <div className="mt-4 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm leading-6 text-emerald-900">
+                            <span className="font-medium">Image source:</span> Cloudflare R2
+                          </div>
+                        ) : null}
                         {draft.caption ? <div className="mt-4 whitespace-pre-wrap rounded-2xl bg-white px-4 py-3 text-sm leading-6 text-slate-700">{draft.caption}</div> : null}
                         <div className="mt-4 space-y-3">{draft.parts.map((part) => <div key={`${draft.id}-${part.index}`} className="rounded-2xl bg-white px-4 py-3"><p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">{part.type}</p><p className="mt-2 text-sm leading-6 text-slate-700">{part.content}</p></div>)}</div>
                         {isImagePlatform && draft.visualPrompt ? <div className="mt-4 rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm leading-6 text-slate-600"><span className="font-medium text-slate-900">Visual prompt:</span> {draft.visualPrompt}</div> : null}
@@ -1028,6 +1048,9 @@ export function CreatorClient({ platform }: { platform: CreatorPlatform }) {
                         </div>
                       </div>
                     )}
+                        </>
+                      );
+                    })()}
                   </div>
                   );
                   })}

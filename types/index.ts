@@ -36,6 +36,11 @@ export type AppSettings = {
   bytePlusApiKey: string;
   bytePlusBaseUrl: string;
   bytePlusImageModel: string;
+  r2AccessKey: string;
+  r2SecretKey: string;
+  r2Bucket: string;
+  r2Endpoint: string;
+  r2PublicUrl: string;
   topicScoutSearchApiKey: string;
   topicScoutSearchUrl: string;
   topicScoutModelApiKey: string;

@@ -437,8 +437,27 @@ function buildThreadChainTexts(draft: CreatorDraft) {
   return [buildDraftTextUnclipped(draft)];
 }
 
+function getPersistentImageUrl(draft: CreatorDraft, configuredPublicBase?: string) {
+  const persistentUrl = draft.r2ImageUrl?.trim() || "";
+  const normalizedPublicBase = (configuredPublicBase ?? "").trim().replace(/\/$/, "");
+
+  if (!persistentUrl) {
+    return "";
+  }
+
+  if (!/^https?:\/\//i.test(persistentUrl)) {
+    throw new Error("Draft r2ImageUrl tidak valid.");
+  }
+
+  if (normalizedPublicBase && !persistentUrl.startsWith(`${normalizedPublicBase}/`)) {
+    throw new Error("Draft image harus memakai Cloudflare R2 public URL.");
+  }
+
+  return persistentUrl;
+}
+
 function getThreadsMediaType(draft: CreatorDraft, index: number) {
-  if (index === 0 && draft.imageUrl) {
+  if (index === 0 && getPersistentImageUrl(draft)) {
     return "IMAGE";
   }
 
@@ -706,8 +725,8 @@ export async function testMetaConnection(): Promise<SocialConnectionResult> {
 }
 
 export async function testLinkedInConnection(): Promise<SocialConnectionResult> {
-  const settings = await refreshLinkedInAccessTokenIfNeeded();
-  const config = ensureLinkedInConfig(settings);
+  const linkedInSettings = await refreshLinkedInAccessTokenIfNeeded();
+  const config = ensureLinkedInConfig(linkedInSettings);
   const profile = await fetchLinkedInUserInfo(config.accessToken);
 
   return {
@@ -748,6 +767,7 @@ export async function testThreadsConnection(): Promise<SocialConnectionResult> {
 export async function simulatePlatformPublish(draft: CreatorDraft): Promise<CreatorPublishSimulation> {
   const settings = await readSettings();
   const text = buildDraftText(draft);
+  const imageUrl = getPersistentImageUrl(draft, settings.r2PublicUrl);
 
   if (draft.platform === "threads") {
     try {
@@ -761,7 +781,7 @@ export async function simulatePlatformPublish(draft: CreatorDraft): Promise<Crea
           create: {
             media_type: getThreadsMediaType(draft, index),
             text: content,
-            image_url: index === 0 ? draft.imageUrl || undefined : undefined,
+            image_url: index === 0 ? imageUrl || undefined : undefined,
             reply_to_id: index === 0 ? undefined : `<thread_id_${index}>`
           },
           publish: {
@@ -800,27 +820,27 @@ export async function simulatePlatformPublish(draft: CreatorDraft): Promise<Crea
   if (draft.platform === "facebook" || draft.platform === "instagram") {
     try {
       const config = ensureMetaConfig(settings, draft.platform);
-      const mode = draft.imageUrl ? "image" : "text";
+      const mode = imageUrl ? "image" : "text";
       const steps =
         draft.platform === "instagram"
           ? ["Create media container", "Publish media container", "Fetch permalink"]
-          : [draft.imageUrl ? "Publish photo post" : "Publish feed post"];
+          : [imageUrl ? "Publish photo post" : "Publish feed post"];
       const requestPreview =
         draft.platform === "instagram"
           ? {
               endpoint: `/${config.actorId}/media -> /${config.actorId}/media_publish`,
               payload: {
-                image_url: draft.imageUrl || "<required>",
+                image_url: imageUrl || "<required>",
                 caption: text,
                 access_token: "[redacted]"
               }
             }
           : {
-              endpoint: draft.imageUrl ? `/${config.actorId}/photos` : `/${config.actorId}/feed`,
+              endpoint: imageUrl ? `/${config.actorId}/photos` : `/${config.actorId}/feed`,
               payload: {
-                url: draft.imageUrl || undefined,
-                message: draft.imageUrl ? undefined : text,
-                caption: draft.imageUrl ? text : undefined,
+                url: imageUrl || undefined,
+                message: imageUrl ? undefined : text,
+                caption: imageUrl ? text : undefined,
                 access_token: "[redacted]"
               }
             };
@@ -833,7 +853,7 @@ export async function simulatePlatformPublish(draft: CreatorDraft): Promise<Crea
         requestPreview,
         steps,
         [],
-        draft.platform === "instagram" && !draft.imageUrl
+        draft.platform === "instagram" && !imageUrl
           ? "Instagram publish memerlukan imageUrl yang valid."
           : undefined
       );
@@ -842,7 +862,7 @@ export async function simulatePlatformPublish(draft: CreatorDraft): Promise<Crea
         draft,
         "meta",
         "Meta",
-        draft.imageUrl ? "image" : "text",
+        imageUrl ? "image" : "text",
         {},
         ["Validasi konfigurasi Meta"],
         [],
@@ -853,7 +873,7 @@ export async function simulatePlatformPublish(draft: CreatorDraft): Promise<Crea
 
   try {
     const config = ensureLinkedInConfig(await refreshLinkedInAccessTokenIfNeeded());
-    const hasImage = Boolean(draft.imageUrl);
+    const hasImage = Boolean(imageUrl);
 
     return buildPublishSimulationResult(
       draft,
@@ -867,7 +887,7 @@ export async function simulatePlatformPublish(draft: CreatorDraft): Promise<Crea
           author: config.actorUrn,
           commentary: text,
           shareMediaCategory: hasImage ? "IMAGE" : "NONE",
-          imageUrl: draft.imageUrl || undefined
+          imageUrl: imageUrl || undefined
         }
       },
       hasImage ? ["Register upload", "Upload binary image", "Create UGC post"] : ["Create UGC post"],
@@ -878,7 +898,7 @@ export async function simulatePlatformPublish(draft: CreatorDraft): Promise<Crea
       draft,
       "linkedin",
       "LinkedIn",
-      draft.imageUrl ? "image" : "text",
+      imageUrl ? "image" : "text",
       {},
       ["Validasi konfigurasi LinkedIn"],
       [],
@@ -889,9 +909,10 @@ export async function simulatePlatformPublish(draft: CreatorDraft): Promise<Crea
 
 export async function publishDraftToPlatform(draft: CreatorDraft): Promise<PublishExecutionResult> {
   const text = buildDraftText(draft);
+  const settings = await readSettings();
+  const imageUrl = getPersistentImageUrl(draft, settings.r2PublicUrl);
 
   if (draft.platform === "threads") {
-    const settings = await readSettings();
     const config = ensureThreadsConfig(settings);
     const chain = buildThreadChainTexts(draft);
     const publishedIds: string[] = [];
@@ -903,8 +924,8 @@ export async function publishDraftToPlatform(draft: CreatorDraft): Promise<Publi
         access_token: config.accessToken
       });
 
-      if (index === 0 && draft.imageUrl) {
-        createParams.set("image_url", draft.imageUrl);
+      if (index === 0 && imageUrl) {
+        createParams.set("image_url", imageUrl);
       }
 
       if (index > 0) {
@@ -963,15 +984,14 @@ export async function publishDraftToPlatform(draft: CreatorDraft): Promise<Publi
   }
 
   if (draft.platform === "facebook" || draft.platform === "instagram") {
-    const settings = await readSettings();
     const config = await resolveMetaConfig(settings, draft.platform);
 
     if (draft.platform === "instagram") {
-      if (!draft.imageUrl) {
-        throw new Error("Instagram publish memerlukan imageUrl pada draft.");
+      if (!imageUrl) {
+        throw new Error("Instagram publish memerlukan r2ImageUrl pada draft.");
       }
 
-      const preparedMedia = await ensureInstagramMediaUrl(draft.imageUrl);
+      const preparedMedia = await ensureInstagramMediaUrl(imageUrl);
 
       const createParams = new URLSearchParams({
         image_url: preparedMedia.url,
@@ -1032,14 +1052,14 @@ export async function publishDraftToPlatform(draft: CreatorDraft): Promise<Publi
 
     const params = new URLSearchParams();
 
-    if (draft.imageUrl) {
-      params.set("url", draft.imageUrl);
+    if (imageUrl) {
+      params.set("url", imageUrl);
       params.set("caption", text);
     } else {
       params.set("message", text);
     }
 
-    const endpoint = draft.imageUrl ? `/${config.actorId}/photos` : `/${config.actorId}/feed`;
+    const endpoint = imageUrl ? `/${config.actorId}/photos` : `/${config.actorId}/feed`;
     let published: Record<string, unknown>;
 
     try {
@@ -1061,19 +1081,19 @@ export async function publishDraftToPlatform(draft: CreatorDraft): Promise<Publi
       externalPostUrl: externalPostUrl || undefined,
       requestPreview: {
         endpoint,
-        message: draft.imageUrl ? undefined : clipText(text, 160),
-        caption: draft.imageUrl ? clipText(text, 160) : undefined,
-        imageUrl: draft.imageUrl || undefined
+        message: imageUrl ? undefined : clipText(text, 160),
+        caption: imageUrl ? clipText(text, 160) : undefined,
+        imageUrl: imageUrl || undefined
       }
     };
   }
 
-  const settings = await refreshLinkedInAccessTokenIfNeeded();
-  const config = ensureLinkedInConfig(settings);
+  const linkedInSettings = await refreshLinkedInAccessTokenIfNeeded();
+  const config = ensureLinkedInConfig(linkedInSettings);
   let mediaAsset: string | undefined;
 
-  if (draft.imageUrl) {
-    mediaAsset = await uploadLinkedInAsset(config.accessToken, config.actorUrn, draft.imageUrl);
+  if (imageUrl) {
+    mediaAsset = await uploadLinkedInAsset(config.accessToken, config.actorUrn, imageUrl);
   }
 
   const ugcPayload: Record<string, unknown> = {
