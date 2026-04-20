@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 
-export async function GET(request: NextRequest, { params }: { params: { encoded: string } }) {
+async function handleProxy(request: NextRequest, { params }: { params: { encoded: string } }) {
   try {
     const encoded = params.encoded;
     
@@ -15,7 +15,7 @@ export async function GET(request: NextRequest, { params }: { params: { encoded:
     }
 
     const response = await fetch(originalUrl, {
-      method: "GET",
+      method: request.method === "HEAD" ? "HEAD" : "GET",
       // Set typical crawler user-agent just in case the origin CDN strictly expects it
       headers: {
         "User-Agent": "Mozilla/5.0 (compatible; MetaMediaProxy/1.0; +https://wa-ai.com)"
@@ -26,13 +26,27 @@ export async function GET(request: NextRequest, { params }: { params: { encoded:
       return NextResponse.json({ error: "Failed to fetch from upstream CDN" }, { status: 502 });
     }
 
-    const blob = await response.blob();
     const contentType = response.headers.get("content-type") || "image/jpeg";
+    const contentLength = response.headers.get("content-length");
+
+    if (request.method === "HEAD") {
+      return new Response(null, {
+        status: 200,
+        headers: {
+          "Content-Type": contentType,
+          ...(contentLength ? { "Content-Length": contentLength } : {}),
+          "Cache-Control": "public, max-age=31536000, immutable"
+        }
+      });
+    }
+
+    const blob = await response.blob();
 
     return new Response(blob, {
       status: 200,
       headers: {
         "Content-Type": contentType,
+        ...(contentLength ? { "Content-Length": contentLength } : {}),
         "Cache-Control": "public, max-age=31536000, immutable"
       }
     });
@@ -40,4 +54,12 @@ export async function GET(request: NextRequest, { params }: { params: { encoded:
     console.error("[media-proxy] Error decoding or fetching url:", error);
     return NextResponse.json({ error: "Proxy internal error" }, { status: 500 });
   }
+}
+
+export async function GET(request: NextRequest, context: { params: { encoded: string } }) {
+  return handleProxy(request, context);
+}
+
+export async function HEAD(request: NextRequest, context: { params: { encoded: string } }) {
+  return handleProxy(request, context);
 }

@@ -273,31 +273,19 @@ function normalizeMediaUrl(rawUrl: string) {
 async function ensureInstagramMediaUrl(rawUrl: string) {
   let normalizedUrl = normalizeMediaUrl(rawUrl);
 
-  // Meta (Facebook/Instagram) crawler blocks or mangles presigned query params from many CDNs (TOS, AWS, etc).
-  // We use wsrv.nl proxy to strip presigned signatures and serve a pure static image directly to Meta.
-  const isPresignedOrCloudCDN =
-    normalizedUrl.includes("volces.com") ||
-    normalizedUrl.includes("amazonaws.com") ||
-    normalizedUrl.includes("googleapis.com") ||
-    normalizedUrl.includes("aliyuncs.com") ||
-    normalizedUrl.includes("X-Tos-") ||
-    normalizedUrl.includes("X-Amz-");
+  // Meta fetchers are strict and many CDNs fail on their HEAD/GET validation sequence.
+  // Always proxy through our own stable image endpoint when request context is available.
+  try {
+    const headersList = await nextHeaders();
+    const host = headersList.get("x-forwarded-host") || headersList.get("host");
+    const proto = headersList.get("x-forwarded-proto") || "https";
 
-  if (isPresignedOrCloudCDN) {
-    try {
-      const headersList = await nextHeaders();
-      const host = headersList.get("x-forwarded-host") || headersList.get("host");
-      const proto = headersList.get("x-forwarded-proto") || "https";
-
-      if (host) {
-        const b64 = Buffer.from(normalizedUrl).toString("base64url");
-        // We append .jpg at the end to satisfy Meta crawler extension heuristics
-        normalizedUrl = `${proto}://${host}/api/media-proxy/${b64}.jpg`;
-      }
-    } catch {
-      // Fallback if somehow called outside of a Next.js Request context
-      console.warn("[social proxy] Called outside request context, bypassing proxy.");
+    if (host) {
+      const b64 = Buffer.from(normalizedUrl).toString("base64url");
+      normalizedUrl = `${proto}://${host}/api/media-proxy/${b64}.jpg`;
     }
+  } catch {
+    console.warn("[social proxy] Called outside request context, bypassing proxy.");
   }
   const headers = {
     "User-Agent":
