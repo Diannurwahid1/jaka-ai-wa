@@ -137,7 +137,7 @@ function formatStatus(status: CreatorDraft["status"]) {
 }
 
 function getDisplayImageUrl(draft: CreatorDraft) {
-  return draft.r2ImageUrl?.trim() || draft.imageUrl?.trim() || "";
+  return draft.r2ImageUrl?.trim() || "";
 }
 
 function buildFlowStages(overview: CreatorOverview, platform: CreatorPlatform) {
@@ -868,6 +868,11 @@ export function CreatorClient({ platform }: { platform: CreatorPlatform }) {
                       <p className="mt-1 text-xs uppercase tracking-[0.18em] text-slate-400">{draft.role} . {draft.tone} . {draft.objective}</p>
                       {isImagePlatform && displayImageUrl ? <img src={displayImageUrl} alt={draft.topic} className="mt-4 h-56 w-full rounded-3xl object-cover" /> : null}
                       {isImagePlatform && draft.imageError ? <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm leading-6 text-amber-900">{draft.imageError}</div> : null}
+                      {isImagePlatform && !draft.r2ImageUrl && draft.imageUrl ? (
+                        <div className="mt-4 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm leading-6 text-rose-900">
+                          Draft ini masih punya URL Ark sementara. `r2ImageUrl` belum tersimpan, jadi image permanen belum siap.
+                        </div>
+                      ) : null}
                       {draft.caption ? <div className="mt-4 whitespace-pre-wrap rounded-2xl bg-white px-4 py-3 text-sm leading-6 text-slate-700">{draft.caption}</div> : null}
                       <div className="mt-4 space-y-3">{draft.parts.map((part) => <div key={`${draft.id}-${part.index}`} className="rounded-2xl bg-white px-4 py-3"><p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">{part.type}</p><p className="mt-2 text-sm leading-6 text-slate-700">{part.content}</p></div>)}</div>
                       {playgroundSimulations[index] ? (
@@ -1026,6 +1031,11 @@ export function CreatorClient({ platform }: { platform: CreatorPlatform }) {
                       <div className="mt-4 border-t border-slate-200/60 pt-4">
                         {isImagePlatform && displayImageUrl ? <img src={displayImageUrl} alt={draft.topic} className="mt-4 h-56 w-full rounded-3xl object-cover" /> : null}
                         {isImagePlatform && draft.imageError ? <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm leading-6 text-amber-900">{draft.imageError}</div> : null}
+                        {isImagePlatform && !draft.r2ImageUrl && draft.imageUrl ? (
+                          <div className="mt-4 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm leading-6 text-rose-900">
+                            Draft ini masih punya URL Ark sementara. `r2ImageUrl` belum tersimpan, jadi image permanen belum siap.
+                          </div>
+                        ) : null}
                         {isImagePlatform && draft.r2ImageUrl ? (
                           <div className="mt-4 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm leading-6 text-emerald-900">
                             <span className="font-medium">Image source:</span> Cloudflare R2
