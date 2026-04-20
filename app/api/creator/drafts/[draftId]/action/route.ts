@@ -8,6 +8,16 @@ import {
 } from "@/lib/creator";
 import { CreatorApprovalAction } from "@/types/creator";
 
+function getAppBaseUrl(request: NextRequest) {
+  const forwardedProto = request.headers.get("x-forwarded-proto")?.split(",")[0]?.trim();
+  const forwardedHost = request.headers.get("x-forwarded-host")?.split(",")[0]?.trim();
+  const host = request.headers.get("host")?.trim();
+  const protocol = forwardedProto || request.nextUrl.protocol.replace(/:$/, "");
+  const effectiveHost = forwardedHost || host || request.nextUrl.host;
+
+  return `${protocol}://${effectiveHost}`;
+}
+
 export async function POST(
   request: NextRequest,
   { params }: { params: { draftId: string } }
@@ -40,7 +50,10 @@ export async function POST(
     }
 
     if (action === "publish") {
-      const result = await publishCreatorDraft(params.draftId, { force: true });
+      const result = await publishCreatorDraft(params.draftId, {
+        force: true,
+        appBaseUrl: getAppBaseUrl(request)
+      });
       const status = result.success ? 200 : 500;
       return NextResponse.json({ ok: result.success, result, reason: result.success ? undefined : result.summary }, { status });
     }

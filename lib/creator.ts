@@ -2617,6 +2617,7 @@ export async function publishCreatorDraft(
   options?: {
     force?: boolean;
     retryOnFailure?: boolean;
+    appBaseUrl?: string;
   }
 ) {
   const settings = await readSettings();
@@ -2647,7 +2648,9 @@ export async function publishCreatorDraft(
   const actionTime = now();
 
   try {
-    const result = await publishDraftToPlatform(mapDraft(document));
+    const result = await publishDraftToPlatform(mapDraft(document), {
+      appBaseUrl: options?.appBaseUrl
+    });
 
     await drafts.updateOne(
       { _id: document._id },
@@ -2792,6 +2795,10 @@ export async function processDueCreatorDrafts(options?: {
   limit?: number;
 }) {
   const settings = await readSettings();
+  const configuredAppBaseUrl =
+    process.env.APP_BASE_URL?.trim().replace(/\/$/, "") ||
+    process.env.NEXT_PUBLIC_APP_URL?.trim().replace(/\/$/, "") ||
+    undefined;
 
   if (!options?.force && !settings.autoPostEnabled) {
     return {
@@ -2819,7 +2826,11 @@ export async function processDueCreatorDrafts(options?: {
   let rescheduled = 0;
 
   for (const document of dueDrafts) {
-    const result = await publishCreatorDraft(document.draftId, { force: true, retryOnFailure: true });
+    const result = await publishCreatorDraft(document.draftId, {
+      force: true,
+      retryOnFailure: true,
+      appBaseUrl: configuredAppBaseUrl
+    });
 
     if (result.success) {
       posted += 1;

@@ -270,22 +270,33 @@ function normalizeMediaUrl(rawUrl: string) {
   return rebuilt.toString();
 }
 
-async function ensureInstagramMediaUrl(rawUrl: string) {
+async function ensureInstagramMediaUrl(rawUrl: string, options?: { appBaseUrl?: string }) {
   let normalizedUrl = normalizeMediaUrl(rawUrl);
 
   // Meta fetchers are strict and many CDNs fail on their HEAD/GET validation sequence.
   // Always proxy through our own stable image endpoint when request context is available.
-  try {
-    const headersList = await nextHeaders();
-    const host = headersList.get("x-forwarded-host") || headersList.get("host");
-    const proto = headersList.get("x-forwarded-proto") || "https";
+  const configuredBaseUrl =
+    options?.appBaseUrl?.trim().replace(/\/$/, "") ||
+    process.env.APP_BASE_URL?.trim().replace(/\/$/, "") ||
+    process.env.NEXT_PUBLIC_APP_URL?.trim().replace(/\/$/, "") ||
+    "";
 
-    if (host) {
-      const b64 = Buffer.from(normalizedUrl).toString("base64url");
-      normalizedUrl = `${proto}://${host}/api/media-proxy/${b64}.jpg`;
+  if (configuredBaseUrl) {
+    const b64 = Buffer.from(normalizedUrl).toString("base64url");
+    normalizedUrl = `${configuredBaseUrl}/api/media-proxy/${b64}.jpg`;
+  } else {
+    try {
+      const headersList = await nextHeaders();
+      const host = headersList.get("x-forwarded-host") || headersList.get("host");
+      const proto = headersList.get("x-forwarded-proto") || "https";
+
+      if (host) {
+        const b64 = Buffer.from(normalizedUrl).toString("base64url");
+        normalizedUrl = `${proto}://${host}/api/media-proxy/${b64}.jpg`;
+      }
+    } catch {
+      console.warn("[social proxy] Called outside request context, bypassing proxy.");
     }
-  } catch {
-    console.warn("[social proxy] Called outside request context, bypassing proxy.");
   }
   const headers = {
     "User-Agent":
@@ -895,7 +906,12 @@ export async function simulatePlatformPublish(draft: CreatorDraft): Promise<Crea
   }
 }
 
-export async function publishDraftToPlatform(draft: CreatorDraft): Promise<PublishExecutionResult> {
+export async function publishDraftToPlatform(
+  draft: CreatorDraft,
+  options?: {
+    appBaseUrl?: string;
+  }
+): Promise<PublishExecutionResult> {
   const text = buildDraftText(draft);
   const settings = await readSettings();
   const imageUrl = getPersistentImageUrl(draft, settings.r2PublicUrl);
@@ -979,7 +995,9 @@ export async function publishDraftToPlatform(draft: CreatorDraft): Promise<Publi
         throw new Error("Instagram publish memerlukan r2ImageUrl pada draft.");
       }
 
-      const preparedMedia = await ensureInstagramMediaUrl(imageUrl);
+      const preparedMedia = await ensureInstagramMediaUrl(imageUrl, {
+        appBaseUrl: options?.appBaseUrl
+      });
 
       const createParams = new URLSearchParams({
         image_url: preparedMedia.url,
