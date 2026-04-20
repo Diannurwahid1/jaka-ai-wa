@@ -4,6 +4,7 @@ import { AUTH_COOKIE, isSameOrigin, verifySessionToken } from "@/lib/auth-shared
 
 const publicPagePaths = new Set(["/login", "/legal", "/privacy-policy", "/terms-of-service", "/data-deletion"]);
 const publicApiPaths = new Set(["/api/auth/login", "/api/webhook/wa", "/api/cron/creator-publish", "/api/cron/creator-generate"]);
+const publicApiPrefixes = ["/api/media-proxy/"];
 const protectedAppPrefixes = ["/dashboard", "/jaka-creator", "/ai-chat", "/wa-monitor", "/knowledge-base", "/settings"];
 const protectedApiPrefixes = ["/api/"];
 
@@ -28,6 +29,10 @@ function isProtectedPage(pathname: string) {
 
 function isProtectedApi(pathname: string) {
   if (publicApiPaths.has(pathname)) {
+    return false;
+  }
+
+  if (publicApiPrefixes.some((prefix) => pathname.startsWith(prefix))) {
     return false;
   }
 
