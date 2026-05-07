@@ -218,3 +218,35 @@ export type CreatorOverview = {
   publishLogs: CreatorPublishLog[];
   commandHelp: string[];
 };
+
+export type CreatorAsyncJobKind = "generate" | "playground";
+export type CreatorAsyncJobStatus = "queued" | "running" | "completed" | "failed";
+
+export type CreatorAsyncJob =
+  | {
+      jobId: string;
+      platform: CreatorPlatform | string;
+      kind: "generate";
+      status: CreatorAsyncJobStatus;
+      createdAt: string;
+      updatedAt: string;
+      result?: {
+        kind: "generate";
+        drafts: CreatorDraft[];
+      };
+      reason?: string;
+    }
+  | {
+      jobId: string;
+      platform: CreatorPlatform | string;
+      kind: "playground";
+      status: CreatorAsyncJobStatus;
+      createdAt: string;
+      updatedAt: string;
+      result?: {
+        kind: "playground";
+        drafts: CreatorDraft[];
+        simulations: CreatorPublishSimulation[];
+      };
+      reason?: string;
+    };

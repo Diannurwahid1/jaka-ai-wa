@@ -7,7 +7,7 @@ import { readSettings } from "@/lib/settings";
 import { appendWebhookEvent } from "@/lib/webhook-debug";
 import { createMessage, updateMessage } from "@/lib/store";
 import { detectIntent } from "@/lib/utils";
-import { extractWebhookPayload, sendWA } from "@/lib/wa";
+import { extractWebhookPayload, formatInboundForwardMessage, getInboundForwardTarget, sendWA } from "@/lib/wa";
 
 function pickHeaders(request: NextRequest) {
   const interesting = [
@@ -89,7 +89,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ ok: false, reason }, { status: 400 });
   }
 
-  const { from, message } = extractWebhookPayload(body);
+  const { from, message, receivedAt, isInbound } = extractWebhookPayload(body);
 
   await appendWebhookEvent({
     stage: "received",
@@ -98,6 +98,19 @@ export async function POST(request: NextRequest) {
     payload: body,
     headers
   });
+
+  if (!isInbound) {
+    await appendWebhookEvent({
+      stage: "ignored",
+      from,
+      message,
+      reason: "Non-inbound WhatsApp event skipped",
+      payload: body,
+      headers
+    });
+
+    return NextResponse.json({ ok: true, ignored: true, reason: "Non-inbound event" });
+  }
 
   if (!from || !message) {
     await appendWebhookEvent({
@@ -121,6 +134,35 @@ export async function POST(request: NextRequest) {
     intent: detectIntent(message)
   });
 
+  const inboundForwardTarget = getInboundForwardTarget();
+
+  if (inboundForwardTarget) {
+    try {
+      const forwardMessage = formatInboundForwardMessage({
+        from,
+        message,
+        receivedAt
+      });
+      const forwardResult = await sendWA(inboundForwardTarget, forwardMessage);
+
+      await appendWebhookEvent({
+        stage: "forwarded_copy",
+        from,
+        message,
+        reason: `Forwarded inbound message to ${inboundForwardTarget}. HTTP ${forwardResult.httpStatus}.`
+      });
+    } catch (error) {
+      const forwardReason = error instanceof Error ? error.message : "Unknown forward error";
+
+      await appendWebhookEvent({
+        stage: "forward_failed",
+        from,
+        message,
+        reason: `Failed forwarding inbound message to ${inboundForwardTarget}: ${forwardReason}`
+      });
+    }
+  }
+
   try {
     const creatorCommand = await handleCreatorApprovalCommand(from, message);
 
@@ -143,11 +185,7 @@ export async function POST(request: NextRequest) {
     }
 
     if (!settings.aiAutoReplyEnabled) {
-      const disabledReply = "Auto-reply AI sedang dimatikan. Pesan Anda diterima dan akan ditangani admin.";
-      const sendResult = await sendWA(from, disabledReply);
-
       await updateMessage(log.id, {
-        reply: disabledReply,
         status: "success"
       });
 
@@ -155,10 +193,10 @@ export async function POST(request: NextRequest) {
         stage: "ignored",
         from,
         message,
-        reason: "AI auto reply disabled. Sent static admin handoff reply."
+        reason: "AI auto reply disabled. No reply sent."
       });
 
-      return NextResponse.json({ ok: true, reply: disabledReply, sendResult, aiDisabled: true });
+      return NextResponse.json({ ok: true, aiDisabled: true, replySent: false });
     }
 
     const aiReply = await askAI(message, {

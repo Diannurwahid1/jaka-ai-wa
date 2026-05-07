@@ -1,3 +1,4 @@
+import { postChatCompletion } from "@/lib/ai-client";
 import { readSettings } from "@/lib/settings";
 
 export type AskJakaResult = {
@@ -191,43 +192,38 @@ export async function askJakaAI(
     };
   }
 
-  const response = await fetch(settings.aiApiUrl, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${settings.aiApiKey}`
-    },
-    body: JSON.stringify({
-      model: settings.aiModel,
-      messages: [
-        {
-          role: "system",
-          content: buildJakaSystemPrompt(name)
-        },
-        {
-          role: "system",
-          content: `Context aplikasi:\n${JSON.stringify(
-            {
-              currentPath: pathname || "/dashboard",
-              ...appContext
-            },
-            null,
-            2
-          )}`
-        },
-        ...history.slice(-12).map((item) => ({
-          role: item.role,
-          content: item.content
-        })),
-        {
-          role: "user",
-          content: trimmedQuestion
-        }
-      ],
-      temperature: 0.7,
-      max_tokens: 320
-    }),
-    signal: AbortSignal.timeout(20000)
+  const response = await postChatCompletion({
+    apiUrl: settings.aiApiUrl,
+    apiKey: settings.aiApiKey,
+    model: settings.aiModel,
+    messages: [
+      {
+        role: "system",
+        content: buildJakaSystemPrompt(name)
+      },
+      {
+        role: "system",
+        content: `Context aplikasi:\n${JSON.stringify(
+          {
+            currentPath: pathname || "/dashboard",
+            ...appContext
+          },
+          null,
+          2
+        )}`
+      },
+      ...history.slice(-12).map((item) => ({
+        role: item.role,
+        content: item.content
+      })),
+      {
+        role: "user",
+        content: trimmedQuestion
+      }
+    ],
+    temperature: 0.7,
+    maxTokens: 320,
+    timeoutMs: 20000
   });
 
   if (!response.ok) {

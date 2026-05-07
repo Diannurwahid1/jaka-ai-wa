@@ -16,6 +16,7 @@ export type MessageLog = {
 
 export type AppSettings = {
   aiAutoReplyEnabled: boolean;
+  creatorGenerationEnabled: boolean;
   aiApiUrl: string;
   aiApiKey: string;
   aiModel: string;

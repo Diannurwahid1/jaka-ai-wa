@@ -2,6 +2,7 @@
 INSERT INTO "AppConfig" (
   "id",
   "aiAutoReplyEnabled",
+  "creatorGenerationEnabled",
   "aiApiUrl",
   "aiApiKey",
   "aiModel",
@@ -58,6 +59,7 @@ INSERT INTO "AppConfig" (
   "updatedAt"
 ) VALUES (
   1,
+  true,
   true,
   'https://ai.sumopod.com/v1/chat/completions',
   'sk-xxxx',
@@ -132,6 +134,7 @@ Jika ditanya harga:
   NOW()
 ) ON CONFLICT ("id") DO UPDATE SET
   "aiAutoReplyEnabled" = EXCLUDED."aiAutoReplyEnabled",
+  "creatorGenerationEnabled" = EXCLUDED."creatorGenerationEnabled",
   "aiApiUrl" = EXCLUDED."aiApiUrl",
   "aiApiKey" = EXCLUDED."aiApiKey",
   "aiModel" = EXCLUDED."aiModel",

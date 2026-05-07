@@ -3,7 +3,16 @@ import { prisma } from "@/lib/prisma";
 export type WebhookDebugEvent = {
   id: string;
   createdAt: string;
-  stage: "received" | "processed" | "ignored" | "failed" | "invalid_json" | "creator_command" | "rejected";
+  stage:
+    | "received"
+    | "processed"
+    | "ignored"
+    | "failed"
+    | "invalid_json"
+    | "creator_command"
+    | "rejected"
+    | "forwarded_copy"
+    | "forward_failed";
   from?: string;
   message?: string;
   reason?: string;

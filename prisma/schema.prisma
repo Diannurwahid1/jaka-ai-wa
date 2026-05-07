@@ -9,6 +9,7 @@ datasource db {
 model AppConfig {
   id                  Int      @id
   aiAutoReplyEnabled  Boolean  @default(true)
+  creatorGenerationEnabled Boolean @default(true)
   aiApiUrl            String
   aiApiKey            String
   aiModel             String

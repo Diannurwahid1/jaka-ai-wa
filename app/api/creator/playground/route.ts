@@ -1,12 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 
-import { runCreatorPlayground } from "@/lib/creator";
+import { startPlaygroundCreatorJob } from "@/lib/creator-jobs";
 
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const result = await runCreatorPlayground(body);
-    return NextResponse.json({ ok: true, ...result });
+    const job = startPlaygroundCreatorJob(body);
+    return NextResponse.json({ ok: true, accepted: true, jobId: job.jobId, job }, { status: 202 });
   } catch (error) {
     const reason = error instanceof Error ? error.message : "Unknown error";
     return NextResponse.json({ ok: false, reason }, { status: 500 });

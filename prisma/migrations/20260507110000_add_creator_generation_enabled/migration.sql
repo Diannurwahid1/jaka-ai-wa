@@ -1,0 +1,2 @@
+ALTER TABLE "AppConfig"
+ADD COLUMN IF NOT EXISTS "creatorGenerationEnabled" BOOLEAN NOT NULL DEFAULT true;

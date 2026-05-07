@@ -9,6 +9,7 @@ import { AppSettings } from "@/types";
 
 const initialSettings: AppSettings = {
   aiAutoReplyEnabled: true,
+  creatorGenerationEnabled: true,
   aiApiUrl: "https://ai.sumopod.com/v1/chat/completions",
   aiApiKey: "",
   aiModel: "seed-2-0-pro",
@@ -1244,6 +1245,14 @@ export function SettingsClient() {
           </div>
 
           <div className="space-y-4">
+            <CheckboxField
+              label="Aktifkan Generator Jaka Creator"
+              checked={settings.creatorGenerationEnabled}
+              onChange={(nextValue) =>
+                setSettings((current) => ({ ...current, creatorGenerationEnabled: nextValue }))
+              }
+              description="Mengontrol pembuatan draft dan topic generation Jaka Creator. Jika dimatikan, generate draft manual, generate terjadwal, dan Topic Scout akan ditolak."
+            />
             <CheckboxField
               label="Aktifkan Auto Post"
               checked={settings.autoPostEnabled}

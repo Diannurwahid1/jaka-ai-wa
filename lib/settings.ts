@@ -22,6 +22,7 @@ Jika ditanya harga:
 
 const fallbackSettings: AppSettings = {
   aiAutoReplyEnabled: (process.env.AI_AUTO_REPLY_ENABLED ?? "true").trim().toLowerCase() !== "false",
+  creatorGenerationEnabled: (process.env.CREATOR_GENERATION_ENABLED ?? "true").trim().toLowerCase() !== "false",
   aiApiUrl: process.env.AI_API_URL ?? "https://ai.sumopod.com/v1/chat/completions",
   aiApiKey: process.env.AI_API_KEY ?? "",
   aiModel: process.env.AI_MODEL ?? "seed-2-0-pro",
@@ -96,6 +97,10 @@ function sanitizeSettings(input: Partial<AppSettings>, current: AppSettings): Ap
   return {
     aiAutoReplyEnabled:
       typeof input.aiAutoReplyEnabled === "boolean" ? input.aiAutoReplyEnabled : current.aiAutoReplyEnabled,
+    creatorGenerationEnabled:
+      typeof input.creatorGenerationEnabled === "boolean"
+        ? input.creatorGenerationEnabled
+        : current.creatorGenerationEnabled,
     aiApiUrl: input.aiApiUrl?.trim() ?? current.aiApiUrl,
     aiApiKey: input.aiApiKey?.trim() ?? current.aiApiKey,
     aiModel: input.aiModel?.trim() ?? current.aiModel,

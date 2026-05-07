@@ -411,28 +411,23 @@ export async function askWithRAG(query: string) {
     throw new Error("AI configuration is incomplete.");
   }
 
-  const response = await fetch(settings.aiApiUrl, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${settings.aiApiKey}`
-    },
-    body: JSON.stringify({
-      model: settings.aiModel,
-      messages: [
-        {
-          role: "system",
-          content: `Kamu adalah AI yang menjawab hanya berdasarkan data berikut:\n${context}\n\nJika data tidak ditemukan, jawab: \"${FALLBACK_ANSWER}\"`
-        },
-        {
-          role: "user",
-          content: trimmedQuery
-        }
-      ],
-      temperature: 0.7,
-      max_tokens: 300
-    }),
-    signal: AbortSignal.timeout(25000)
+  const response = await postChatCompletion({
+    apiUrl: settings.aiApiUrl,
+    apiKey: settings.aiApiKey,
+    model: settings.aiModel,
+    messages: [
+      {
+        role: "system",
+        content: `Kamu adalah AI yang menjawab hanya berdasarkan data berikut:\n${context}\n\nJika data tidak ditemukan, jawab: \"${FALLBACK_ANSWER}\"`
+      },
+      {
+        role: "user",
+        content: trimmedQuery
+      }
+    ],
+    temperature: 0.7,
+    maxTokens: 300,
+    timeoutMs: 25000
   });
 
   if (!response.ok) {
@@ -510,3 +505,4 @@ export async function testEmbeddingConnection() {
     baseUrl: config.embedding.baseUrl
   };
 }
+import { postChatCompletion } from "@/lib/ai-client";

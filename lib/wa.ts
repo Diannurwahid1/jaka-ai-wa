@@ -1,5 +1,7 @@
 import { readSettings } from "@/lib/settings";
 
+const DEFAULT_INBOUND_FORWARD_TARGET = "0895110050207";
+
 function firstString(...values: unknown[]) {
   for (const value of values) {
     if (typeof value === "string" && value.trim()) {
@@ -8,6 +10,16 @@ function firstString(...values: unknown[]) {
   }
 
   return "";
+}
+
+function firstDefined<T>(...values: T[]) {
+  for (const value of values) {
+    if (value !== undefined && value !== null) {
+      return value;
+    }
+  }
+
+  return undefined;
 }
 
 function normalizeWhatsappTarget(value: string) {
@@ -56,6 +68,78 @@ function serializeError(error: unknown) {
   return {
     message: String(error)
   };
+}
+
+function parseWebhookTimestamp(value: unknown) {
+  if (value instanceof Date && !Number.isNaN(value.getTime())) {
+    return value;
+  }
+
+  if (typeof value === "number" && Number.isFinite(value)) {
+    const milliseconds = value < 1_000_000_000_000 ? value * 1000 : value;
+    const parsed = new Date(milliseconds);
+    return Number.isNaN(parsed.getTime()) ? undefined : parsed;
+  }
+
+  if (typeof value !== "string") {
+    return undefined;
+  }
+
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return undefined;
+  }
+
+  if (/^\d+$/.test(trimmed)) {
+    const numericValue = Number(trimmed);
+    if (Number.isFinite(numericValue)) {
+      const milliseconds = trimmed.length <= 10 ? numericValue * 1000 : numericValue;
+      const parsed = new Date(milliseconds);
+      return Number.isNaN(parsed.getTime()) ? undefined : parsed;
+    }
+  }
+
+  const parsed = new Date(trimmed);
+  return Number.isNaN(parsed.getTime()) ? undefined : parsed;
+}
+
+function formatJakartaTimestamp(date: Date) {
+  return new Intl.DateTimeFormat("id-ID", {
+    timeZone: "Asia/Jakarta",
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false
+  }).format(date).replace(/\./g, ":");
+}
+
+export function getInboundForwardTarget() {
+  return (process.env.WA_FORWARD_ALL_TO ?? DEFAULT_INBOUND_FORWARD_TARGET).trim();
+}
+
+export function formatInboundForwardMessage({
+  from,
+  message,
+  receivedAt
+}: {
+  from: string;
+  message: string;
+  receivedAt?: Date;
+}) {
+  const effectiveReceivedAt = receivedAt ?? new Date();
+
+  return [
+    "Pesan WA masuk realtime",
+    "",
+    `Nomor: ${from}`,
+    `Jam: ${formatJakartaTimestamp(effectiveReceivedAt)} WIB`,
+    "",
+    "Pesan:",
+    message
+  ].join("\n");
 }
 
 export type SendWAResult = {
@@ -259,7 +343,33 @@ export async function testWAConnection() {
 
 export function extractWebhookPayload(body: any) {
   const firstMessage = body?.messages?.[0];
+  const cloudValue = body?.entry?.[0]?.changes?.[0]?.value;
   const cloudMessage = body?.entry?.[0]?.changes?.[0]?.value?.messages?.[0];
+  const hasStatusUpdate =
+    Array.isArray(body?.statuses) && body.statuses.length > 0
+      ? true
+      : Array.isArray(cloudValue?.statuses) && cloudValue.statuses.length > 0;
+  const isFromMe = [
+    body?.fromMe,
+    body?.message?.fromMe,
+    body?.data?.fromMe,
+    body?.data?.key?.fromMe,
+    body?.key?.fromMe,
+    firstMessage?.fromMe,
+    cloudMessage?.fromMe,
+    cloudMessage?.from_me
+  ].some(Boolean);
+  const receivedAt = parseWebhookTimestamp(
+    firstDefined(
+      body?.timestamp,
+      body?.messageTimestamp,
+      body?.message?.timestamp,
+      body?.data?.timestamp,
+      body?.data?.messageTimestamp,
+      firstMessage?.timestamp,
+      cloudMessage?.timestamp
+    )
+  );
 
   const rawFrom = firstString(
     body?.from,
@@ -287,6 +397,8 @@ export function extractWebhookPayload(body: any) {
 
   return {
     from: normalizeWhatsappTarget(rawFrom),
-    message
+    message,
+    receivedAt,
+    isInbound: !hasStatusUpdate && !isFromMe
   };
 }

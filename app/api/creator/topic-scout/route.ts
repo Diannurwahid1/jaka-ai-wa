@@ -9,6 +9,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ ok: true, result });
   } catch (error) {
     const reason = error instanceof Error ? error.message : "Unknown error";
-    return NextResponse.json({ ok: false, reason }, { status: 500 });
+    const status = reason.includes("dinonaktifkan") ? 503 : 500;
+    return NextResponse.json({ ok: false, reason }, { status });
   }
 }

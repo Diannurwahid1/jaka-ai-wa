@@ -64,8 +64,7 @@ export async function generateBytePlusImage(input: GenerateBytePlusImageInput) {
       size: input.size || "1024x1024",
       stream: false,
       watermark: false
-    }),
-    signal: AbortSignal.timeout(60000)
+    })
   });
 
   if (!response.ok) {

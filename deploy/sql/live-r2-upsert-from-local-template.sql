@@ -5,6 +5,7 @@
 INSERT INTO "AppConfig" (
   "id",
   "aiAutoReplyEnabled",
+  "creatorGenerationEnabled",
   "aiApiUrl",
   "aiApiKey",
   "aiModel",
@@ -66,6 +67,7 @@ INSERT INTO "AppConfig" (
   "updatedAt"
 ) VALUES (
   1,
+  true,
   true,
   '',
   '',

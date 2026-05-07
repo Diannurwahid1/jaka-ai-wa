@@ -1,5 +1,6 @@
 import { ObjectId } from "mongodb";
 
+import { postChatCompletion } from "@/lib/ai-client";
 import { generateBytePlusImage, hasBytePlusImageConfig } from "@/lib/byteplus";
 import { getMongoDatabase } from "@/lib/mongodb";
 import { persistGeneratedImageToR2 } from "@/lib/r2";
@@ -29,6 +30,8 @@ import {
 } from "@/types/creator";
 
 const CREATOR_ID = "jaka-ai-creator";
+const CREATOR_DRAFT_GENERATION_DISABLED_REASON = "Jaka Creator sedang dinonaktifkan untuk pembuatan draft.";
+const CREATOR_TOPIC_GENERATION_DISABLED_REASON = "Jaka Creator sedang dinonaktifkan untuk pembuatan topik.";
 const creatorCollectionNames = {
   profiles: "creator_profiles",
   knowledge: "creator_knowledge",
@@ -40,6 +43,18 @@ const creatorCollectionNames = {
 
 const platformOrder: CreatorPlatform[] = ["threads", "instagram", "linkedin", "facebook"];
 const publishRetryDelayMinutes = [5, 15, 60] as const;
+
+async function assertCreatorGenerationEnabled(kind: "draft" | "topic") {
+  const settings = await readSettings();
+
+  if (settings.creatorGenerationEnabled) {
+    return;
+  }
+
+  throw new Error(
+    kind === "draft" ? CREATOR_DRAFT_GENERATION_DISABLED_REASON : CREATOR_TOPIC_GENERATION_DISABLED_REASON
+  );
+}
 
 type CreatorProfileDocument = {
   _id?: ObjectId;
@@ -1344,24 +1359,34 @@ function getNextPublishRetryTime(attemptNumber: number) {
 }
 
 async function pickNextScheduleSlot(profile: CreatorProfile) {
+  const used = await listUsedScheduleSlots(profile.platform);
+  const candidates = buildUpcomingSlots(profile.scheduleSlots, Math.max(profile.planningDays + 7, 14));
+  return candidates.find((candidate) => !used.has(candidate.toISOString())) ?? candidates[0] ?? now();
+}
+
+async function listUsedScheduleSlots(platform: CreatorPlatform) {
   const { drafts } = await getCollections();
   const scheduledDrafts = await drafts
     .find({
-      platform: profile.platform,
+      platform,
       status: "scheduled",
       scheduledFor: { $exists: true }
     })
     .project({ scheduledFor: 1 })
     .toArray();
 
-  const used = new Set(
+  return new Set(
     scheduledDrafts
       .map((item) => item.scheduledFor?.toISOString())
       .filter((value): value is string => Boolean(value))
   );
+}
 
+function pickNextScheduleSlotFromUsed(profile: CreatorProfile, used: Set<string>) {
   const candidates = buildUpcomingSlots(profile.scheduleSlots, Math.max(profile.planningDays + 7, 14));
-  return candidates.find((candidate) => !used.has(candidate.toISOString())) ?? candidates[0] ?? now();
+  const next = candidates.find((candidate) => !used.has(candidate.toISOString())) ?? candidates[0] ?? now();
+  used.add(next.toISOString());
+  return next;
 }
 
 async function logApprovalAction(
@@ -1686,6 +1711,8 @@ export async function runCreatorTopicScout(input?: {
   query?: string;
   limit?: number;
 }) {
+  await assertCreatorGenerationEnabled("topic");
+
   const platform = normalizePlatform(input?.platform);
   const profile = await getCreatorProfile(platform);
   const settings = await readSettings();
@@ -1710,7 +1737,8 @@ export async function runCreatorTopicScout(input?: {
       references?: Array<{ title?: string; url?: string; snippet?: string }>;
     }>;
   };
-  const candidates = Array.isArray(parsed.topics) ? parsed.topics : [];
+  type TopicScoutCandidate = NonNullable<NonNullable<typeof parsed.topics>[number]>;
+  const candidates = (Array.isArray(parsed.topics) ? parsed.topics : []) as TopicScoutCandidate[];
 
   if (candidates.length === 0) {
     throw new Error("Topic Scout tidak menghasilkan brief topik.");
@@ -1739,16 +1767,17 @@ export async function runCreatorTopicScout(input?: {
       continue;
     }
 
-    const references = Array.isArray(candidate.references)
-      ? candidate.references
-          .map((reference) => ({
+    type TopicReference = NonNullable<NonNullable<TopicScoutCandidate["references"]>[number]>;
+    const referencesSource = (Array.isArray(candidate.references) ? candidate.references : []) as TopicReference[];
+    const references = referencesSource
+          .map((reference: TopicReference) => ({
             title: String(reference?.title ?? "").trim(),
             url: String(reference?.url ?? "").trim(),
             snippet: String(reference?.snippet ?? "").trim() || undefined
           }))
-          .filter((reference) => reference.title && reference.url)
+          .filter((reference: { title: string; url: string; snippet?: string }) => reference.title && reference.url)
           .slice(0, 3)
-      : [];
+      ;
 
     const document: CreatorTopicBriefDocument = {
       creatorId: CREATOR_ID,
@@ -1759,9 +1788,7 @@ export async function runCreatorTopicScout(input?: {
       angle: String(candidate.angle ?? "").trim() || "Angle bisnis hospitality yang relevan",
       description: String(candidate.description ?? "").trim() || topic,
       whyNow: String(candidate.whyNow ?? "").trim() || "Relevan dengan dinamika market hospitality saat ini.",
-      tags: Array.isArray(candidate.tags)
-        ? candidate.tags.map((tag) => String(tag).trim()).filter(Boolean).slice(0, 8)
-        : [],
+      tags: ((Array.isArray(candidate.tags) ? candidate.tags : []) as string[]).map((tag: string) => String(tag).trim()).filter(Boolean).slice(0, 8),
       dedupeKey,
       status: "fresh",
       references,
@@ -1792,28 +1819,23 @@ async function callCreatorModel(prompt: string) {
     throw new Error("AI configuration is incomplete.");
   }
 
-  const response = await fetch(settings.aiApiUrl, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${settings.aiApiKey}`
-    },
-    body: JSON.stringify({
-      model: settings.aiModel,
-      messages: [
-        {
-          role: "system",
-          content:
-            "Kamu adalah Jaka AI Creator, AI strategist untuk konten social media creator-first. Balas WAJIB JSON valid tanpa markdown."
-        },
-        {
-          role: "user",
-          content: prompt
-        }
-      ],
-      temperature: 0.9,
-      max_tokens: 1400
-    })
+  const response = await postChatCompletion({
+    apiUrl: settings.aiApiUrl,
+    apiKey: settings.aiApiKey,
+    model: settings.aiModel,
+    messages: [
+      {
+        role: "system",
+        content:
+          "Kamu adalah Jaka AI Creator, AI strategist untuk konten social media creator-first. Balas WAJIB JSON valid tanpa markdown."
+      },
+      {
+        role: "user",
+        content: prompt
+      }
+    ],
+    temperature: 0.9,
+    maxTokens: 1400
   });
 
   if (!response.ok) {
@@ -2432,6 +2454,8 @@ export async function generateCreatorDrafts(input?: {
   generationMode?: "manual" | "scheduled";
   generationSlotKey?: string;
 }) {
+  await assertCreatorGenerationEnabled("draft");
+
   const platform = normalizePlatform(input?.platform);
   const meta = getPlatformMeta(platform);
   const profile = await getCreatorProfile(platform);
@@ -2465,8 +2489,9 @@ export async function generateCreatorDrafts(input?: {
       })
     );
     const parsed = parseJsonPayload(raw) as { drafts?: GeneratedDraftSeed[] };
-    const draftsFromModel = Array.isArray(parsed.drafts) ? parsed.drafts.slice(0, count) : [];
-    draftsFromModel.forEach((seed) => generatedDrafts.push({ seed, fallbackTopic: manualTopic }));
+    const draftsFromModel = (Array.isArray(parsed.drafts) ? parsed.drafts : []) as GeneratedDraftSeed[];
+    const limitedDrafts = draftsFromModel.slice(0, count);
+    limitedDrafts.forEach((seed) => generatedDrafts.push({ seed, fallbackTopic: manualTopic }));
   } else {
     const topicBriefs = await ensureTopicBriefPool(platform, profile, count);
 
@@ -2485,7 +2510,8 @@ export async function generateCreatorDrafts(input?: {
         })
       );
       const parsed = parseJsonPayload(raw) as { drafts?: GeneratedDraftSeed[] };
-      const firstDraft = Array.isArray(parsed.drafts) ? parsed.drafts[0] : undefined;
+      const draftsFromModel = (Array.isArray(parsed.drafts) ? parsed.drafts : []) as GeneratedDraftSeed[];
+      const firstDraft = draftsFromModel[0];
 
       if (firstDraft) {
         generatedDrafts.push({
@@ -2737,6 +2763,18 @@ export async function processDueCreatorDraftGenerations(options?: {
   force?: boolean;
   limit?: number;
 }) {
+  const settings = await readSettings();
+
+  if (!settings.creatorGenerationEnabled) {
+    return {
+      processed: 0,
+      created: 0,
+      skipped: 0,
+      failed: 0,
+      reason: CREATOR_DRAFT_GENERATION_DISABLED_REASON
+    };
+  }
+
   const [profiles, collections] = await Promise.all([listAllCreatorProfiles(), getCollections()]);
 
   const dueSlots = profiles
@@ -3056,6 +3094,76 @@ export async function applyCreatorDraftAction(
   throw new Error("Unsupported draft action.");
 }
 
+export async function approveAllCreatorDrafts(platform: CreatorPlatform) {
+  const { drafts } = await getCollections();
+  const profile = await getCreatorProfile(platform);
+  const actionTime = now();
+  const usedScheduleSlots = await listUsedScheduleSlots(platform);
+  const targetDrafts = await drafts
+    .find({
+      creatorId: CREATOR_ID,
+      platform,
+      status: "draft"
+    })
+    .sort({ createdAt: 1, _id: 1 })
+    .toArray();
+
+  if (targetDrafts.length === 0) {
+    return {
+      platform,
+      approvedCount: 0,
+      drafts: [] as CreatorDraft[],
+      reply: `Tidak ada draft ${getPlatformMeta(platform).label} dengan status draft.`
+    };
+  }
+
+  const approvedDrafts: CreatorDraft[] = [];
+
+  for (const document of targetDrafts) {
+    const scheduledFor = pickNextScheduleSlotFromUsed(profile, usedScheduleSlots);
+
+    await drafts.updateOne(
+      { _id: document._id },
+      {
+        $set: {
+          status: "scheduled",
+          approvedAt: actionTime,
+          scheduledFor,
+          lastPublishSummary: `Scheduled for ${scheduledFor.toISOString()}`,
+          updatedAt: actionTime
+        },
+        $unset: {
+          lastApprovalError: "",
+          lastPublishError: "",
+          publishedAt: "",
+          externalPostId: "",
+          externalPostUrl: ""
+        }
+      }
+    );
+
+    await logApprovalAction(
+      document.draftId,
+      document.platform,
+      "approve",
+      "dashboard",
+      `Scheduled for ${scheduledFor.toISOString()} via approve all`
+    );
+
+    const refreshedDocument = await drafts.findOne({ _id: document._id });
+    if (refreshedDocument) {
+      approvedDrafts.push(mapDraft(refreshedDocument as CreatorDraftDocument));
+    }
+  }
+
+  return {
+    platform,
+    approvedCount: approvedDrafts.length,
+    drafts: approvedDrafts,
+    reply: `${approvedDrafts.length} draft ${getPlatformMeta(platform).label} disetujui dan dijadwalkan tanpa bentrok.`
+  };
+}
+
 export async function handleCreatorApprovalCommand(from: string, message: string) {
   const trimmed = message.trim();
 
@@ -3089,44 +3197,16 @@ export async function handleCreatorApprovalCommand(from: string, message: string
   }
 
   if (scoutCommands.has(command)) {
-    const { platform, query } = normalizeScoutInstruction(trimmed, matchedPlatforms);
-    const result = await runCreatorTopicScout({
-      platform,
-      query,
-      limit: 20
-    });
-    const preview = result.topics.slice(0, 5).map((item, index) => `${index + 1}. ${item.topic}`).join("\n");
-
     return {
       matched: true as const,
-      reply: [
-        `Topic Scout ${getPlatformMeta(result.platform as CreatorPlatform).label} selesai.`,
-        `Query: ${result.query}`,
-        `Disimpan: ${result.saved} topik baru.`,
-        preview ? `Preview:\n${preview}` : "",
-        "",
-        "Kirim generate draft tanpa isi topic agar sistem ambil dari pool topik fresh."
-      ]
-        .filter(Boolean)
-        .join("\n")
+      reply: CREATOR_TOPIC_GENERATION_DISABLED_REASON
     };
   }
 
   if (topicListCommands.has(command)) {
-    const { platform } = normalizeScoutInstruction(trimmed, matchedPlatforms);
-    const topics = await listCreatorTopicBriefs(platform, { limit: 8, status: "fresh" });
-
     return {
       matched: true as const,
-      reply:
-        topics.length === 0
-          ? `Belum ada topik fresh untuk ${getPlatformMeta(platform).label}. Jalankan /scout ${platform} dulu.`
-          : [
-              `Topik fresh ${getPlatformMeta(platform).label}:`,
-              ...topics.map((item, index) => `${index + 1}. ${item.topic}`),
-              "",
-              "Generate draft tanpa isi topic untuk memakai antrean ini."
-            ].join("\n")
+      reply: CREATOR_TOPIC_GENERATION_DISABLED_REASON
     };
   }
 

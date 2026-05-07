@@ -1,4 +1,5 @@
 import { buildContextMessages, resetIfExpired, saveMessage } from "@/lib/memory";
+import { postChatCompletion } from "@/lib/ai-client";
 import { retrieveKnowledgeContext } from "@/lib/rag";
 import { readSettings } from "@/lib/settings";
 
@@ -53,19 +54,14 @@ export async function askAI(message: string, options?: AskAIOptions) {
     }
   }
 
-  const response = await fetch(settings.aiApiUrl, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${settings.aiApiKey}`
-    },
-    body: JSON.stringify({
-      model: settings.aiModel,
-      messages,
-      temperature: 0.7,
-      max_tokens: 300
-    }),
-    signal: AbortSignal.timeout(25000)
+  const response = await postChatCompletion({
+    apiUrl: settings.aiApiUrl,
+    apiKey: settings.aiApiKey,
+    model: settings.aiModel,
+    messages,
+    temperature: 0.7,
+    maxTokens: 300,
+    timeoutMs: 25000
   });
 
   if (!response.ok) {
@@ -90,28 +86,23 @@ export async function testAIConnection() {
     throw new Error("AI configuration is incomplete.");
   }
 
-  const response = await fetch(settings.aiApiUrl, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${settings.aiApiKey}`
-    },
-    body: JSON.stringify({
-      model: settings.aiModel,
-      messages: [
-        {
-          role: "system",
-          content: "Reply with OK"
-        },
-        {
-          role: "user",
-          content: "health check"
-        }
-      ],
-      temperature: 0,
-      max_tokens: 8
-    }),
-    signal: AbortSignal.timeout(15000)
+  const response = await postChatCompletion({
+    apiUrl: settings.aiApiUrl,
+    apiKey: settings.aiApiKey,
+    model: settings.aiModel,
+    messages: [
+      {
+        role: "system",
+        content: "Reply with OK"
+      },
+      {
+        role: "user",
+        content: "health check"
+      }
+    ],
+    temperature: 0,
+    maxTokens: 8,
+    timeoutMs: 15000
   });
 
   if (!response.ok) {

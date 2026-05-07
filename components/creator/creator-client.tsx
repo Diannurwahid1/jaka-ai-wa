@@ -7,6 +7,7 @@ import { PageHeader } from "@/components/page-header";
 import { useToast } from "@/components/toast-provider";
 import { formatDateTime } from "@/lib/utils";
 import {
+  CreatorAsyncJob,
   CreatorDraft,
   CreatorObjective,
   CreatorOverview,
@@ -134,6 +135,22 @@ function defaultDraftScheduleSlots(platform: CreatorPlatform): CreatorScheduleSl
 
 function formatStatus(status: CreatorDraft["status"]) {
   return status.replace(/_/g, " ");
+}
+
+function formatJobStatus(status: CreatorAsyncJob["status"]) {
+  if (status === "queued") {
+    return "Masuk antrean";
+  }
+
+  if (status === "running") {
+    return "Sedang diproses";
+  }
+
+  if (status === "completed") {
+    return "Selesai";
+  }
+
+  return "Gagal";
 }
 
 function getDisplayImageUrl(draft: CreatorDraft) {
@@ -268,6 +285,7 @@ export function CreatorClient({ platform }: { platform: CreatorPlatform }) {
   });
   const [playgroundDrafts, setPlaygroundDrafts] = useState<CreatorDraft[]>([]);
   const [playgroundSimulations, setPlaygroundSimulations] = useState<CreatorPublishSimulation[]>([]);
+  const [activeJob, setActiveJob] = useState<CreatorAsyncJob | null>(null);
   const [topicScoutForm, setTopicScoutForm] = useState({
     query: "",
     limit: "20"
@@ -425,6 +443,32 @@ export function CreatorClient({ platform }: { platform: CreatorPlatform }) {
     return payload;
   }
 
+  async function pollCreatorJob(jobId: string) {
+    while (true) {
+      const response = await fetch(`/api/creator/jobs/${encodeURIComponent(jobId)}`, {
+        cache: "no-store"
+      });
+      const payload = await response.json();
+
+      if (!response.ok || !payload.ok) {
+        throw new Error(payload.reason || "Gagal membaca status job");
+      }
+
+      const job = payload.job as CreatorAsyncJob;
+      setActiveJob(job);
+
+      if (job.status === "completed") {
+        return job;
+      }
+
+      if (job.status === "failed") {
+        throw new Error(job.reason || "Job gagal diproses");
+      }
+
+      await new Promise((resolve) => window.setTimeout(resolve, 1500));
+    }
+  }
+
   async function handleProfileSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setBusyId("profile");
@@ -453,9 +497,10 @@ export function CreatorClient({ platform }: { platform: CreatorPlatform }) {
   async function handleGenerate(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setBusyId("generate");
+    setActiveJob(null);
 
     try {
-      await postJson("/api/creator/generate", {
+      const payload = await postJson("/api/creator/generate", {
         platform,
         topic: generateForm.topic,
         count: Number(generateForm.count),
@@ -464,9 +509,13 @@ export function CreatorClient({ platform }: { platform: CreatorPlatform }) {
         objective: generateForm.objective,
         autoSend: generateForm.autoSend
       });
+      const job = await pollCreatorJob(String(payload.jobId));
       await refreshOverview();
       pushToast({
-        title: generateForm.autoSend ? "Draft dibuat dan dikirim ke approval" : "Draft berhasil dibuat",
+        title:
+          generateForm.autoSend
+            ? `Draft selesai dibuat (${job.result?.kind === "generate" ? job.result.drafts.length : 0}) dan dikirim ke approval`
+            : `Draft selesai dibuat (${job.result?.kind === "generate" ? job.result.drafts.length : 0})`,
         tone: "success"
       });
     } catch (error) {
@@ -475,6 +524,7 @@ export function CreatorClient({ platform }: { platform: CreatorPlatform }) {
         tone: "error"
       });
     } finally {
+      setActiveJob(null);
       setBusyId(null);
     }
   }
@@ -482,6 +532,7 @@ export function CreatorClient({ platform }: { platform: CreatorPlatform }) {
   async function handlePlayground(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setBusyId("playground");
+    setActiveJob(null);
 
     try {
       const payload = await postJson("/api/creator/playground", {
@@ -493,9 +544,12 @@ export function CreatorClient({ platform }: { platform: CreatorPlatform }) {
         objective: playgroundForm.objective,
         simulateUpload: playgroundForm.simulateUpload
       });
+      const job = await pollCreatorJob(String(payload.jobId));
 
-      setPlaygroundDrafts(payload.drafts as CreatorDraft[]);
-      setPlaygroundSimulations((payload.simulations as CreatorPublishSimulation[]) || []);
+      if (job.result?.kind === "playground") {
+        setPlaygroundDrafts(job.result.drafts);
+        setPlaygroundSimulations(job.result.simulations || []);
+      }
       pushToast({ title: `Simulasi ${platformMeta[platform].label} berhasil dibuat`, tone: "success" });
     } catch (error) {
       pushToast({
@@ -503,6 +557,7 @@ export function CreatorClient({ platform }: { platform: CreatorPlatform }) {
         tone: "error"
       });
     } finally {
+      setActiveJob(null);
       setBusyId(null);
     }
   }
@@ -589,6 +644,31 @@ export function CreatorClient({ platform }: { platform: CreatorPlatform }) {
   const filteredDrafts = overview?.drafts.filter((d) => draftStatusFilter === "all" || d.status === draftStatusFilter) || [];
   const displayedDrafts = draftLimit === "all" ? filteredDrafts : filteredDrafts.slice((draftPage - 1) * draftLimit, draftPage * draftLimit);
   const totalDraftPages = draftLimit === "all" ? 1 : Math.ceil(filteredDrafts.length / draftLimit);
+  const draftItemsReadyToApprove = overview?.drafts.filter((draft) => draft.status === "draft") || [];
+
+  async function handleApproveAllDrafts() {
+    setBusyId("approve-all-drafts");
+
+    try {
+      const payload = await postJson("/api/creator/drafts/action", {
+        action: "approve_all",
+        platform
+      });
+
+      await refreshOverview();
+      pushToast({
+        title: payload.result?.reply || "Semua draft berhasil di-approve",
+        tone: "success"
+      });
+    } catch (error) {
+      pushToast({
+        title: error instanceof Error ? error.message : "Gagal approve semua draft",
+        tone: "error"
+      });
+    } finally {
+      setBusyId(null);
+    }
+  }
 
   return (
     <div>
@@ -759,6 +839,11 @@ export function CreatorClient({ platform }: { platform: CreatorPlatform }) {
             <div className="grid gap-6">
               <form onSubmit={handleGenerate} className={sectionClassName}>
                 <h3 className="text-lg font-semibold text-slate-950">Generate Draft</h3>
+                {activeJob?.kind === "generate" && busyId === "generate" ? (
+                  <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+                    Job {formatJobStatus(activeJob.status)}. ID: <span className="font-mono">{activeJob.jobId}</span>
+                  </div>
+                ) : null}
                 <div className="mt-5 grid gap-4">
                   <input value={generateForm.topic} onChange={(event) => setGenerateForm((current) => ({ ...current, topic: event.target.value }))} placeholder="Topik opsional" className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900" />
                   <div className="grid gap-4 md:grid-cols-2">
@@ -771,7 +856,7 @@ export function CreatorClient({ platform }: { platform: CreatorPlatform }) {
                     <select value={generateForm.objective} onChange={(event) => setGenerateForm((current) => ({ ...current, objective: event.target.value as CreatorObjective }))} className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900">{objectiveOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select>
                   </div>
                 </div>
-                <button type="submit" disabled={busyId === "generate"} className="mt-5 rounded-2xl bg-accent px-5 py-3 text-sm font-medium text-white disabled:opacity-60">{busyId === "generate" ? "Generating..." : `Generate ${platformMeta[platform].label}`}</button>
+                <button type="submit" disabled={busyId === "generate"} className="mt-5 rounded-2xl bg-accent px-5 py-3 text-sm font-medium text-white disabled:opacity-60">{busyId === "generate" ? "Memproses job..." : `Generate ${platformMeta[platform].label}`}</button>
               </form>
 
               <form onSubmit={handleTopicScout} className={sectionClassName}>
@@ -816,6 +901,11 @@ export function CreatorClient({ platform }: { platform: CreatorPlatform }) {
               <p className="mt-1 text-sm text-slate-500">
                 Uji karakter konten {platformMeta[platform].label} tanpa menyimpan draft ke queue utama.
               </p>
+              {activeJob?.kind === "playground" && busyId === "playground" ? (
+                <div className="mt-4 rounded-2xl border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-900">
+                  Job {formatJobStatus(activeJob.status)}. ID: <span className="font-mono">{activeJob.jobId}</span>
+                </div>
+              ) : null}
               <div className="mt-5 grid gap-4">
                 <input
                   value={playgroundForm.topic}
@@ -847,7 +937,7 @@ export function CreatorClient({ platform }: { platform: CreatorPlatform }) {
                   <select value={playgroundForm.objective} onChange={(event) => setPlaygroundForm((current) => ({ ...current, objective: event.target.value as CreatorObjective }))} className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900">{objectiveOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select>
                 </div>
               </div>
-              <button type="submit" disabled={busyId === "playground"} className="mt-5 rounded-2xl bg-slate-950 px-5 py-3 text-sm font-medium text-white disabled:opacity-60">{busyId === "playground" ? "Membuat simulasi..." : "Run Playground"}</button>
+              <button type="submit" disabled={busyId === "playground"} className="mt-5 rounded-2xl bg-slate-950 px-5 py-3 text-sm font-medium text-white disabled:opacity-60">{busyId === "playground" ? "Memproses simulasi..." : "Run Playground"}</button>
             </form>
 
             <div className={sectionClassName}>
@@ -985,6 +1075,16 @@ export function CreatorClient({ platform }: { platform: CreatorPlatform }) {
                 <div className="flex flex-wrap items-center justify-between gap-4">
                   <h3 className="text-lg font-semibold text-slate-950">Draft Queue</h3>
                   <div className="flex items-center gap-2">
+                    {draftItemsReadyToApprove.length > 0 ? (
+                      <button
+                        type="button"
+                        disabled={busyId === "approve-all-drafts"}
+                        onClick={() => void handleApproveAllDrafts()}
+                        className="rounded-full bg-slate-950 px-4 py-2 text-xs font-medium text-white disabled:opacity-60"
+                      >
+                        Approve All Draft ({draftItemsReadyToApprove.length})
+                      </button>
+                    ) : null}
                     <select value={draftStatusFilter} onChange={(e) => { setDraftStatusFilter(e.target.value); setDraftPage(1); }} className="rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs text-slate-700">
                       <option value="all">All Status</option>
                       <option value="draft">Draft</option>
@@ -1098,4 +1198,3 @@ export function CreatorClient({ platform }: { platform: CreatorPlatform }) {
     </div>
   );
 }
-
