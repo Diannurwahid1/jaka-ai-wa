@@ -220,6 +220,11 @@ type GeneratedVisualConcept = Pick<
   "visualPrompt" | "visualHeadline" | "visualSubline" | "visualCta" | "visualScene" | "visualLayout" | "visualMood"
 >;
 
+type SeoKeywordConfig = {
+  enabled: boolean;
+  keywords: string[];
+};
+
 type PlatformMeta = {
   label: string;
   description: string;
@@ -824,6 +829,139 @@ function normalizeScheduleSlots(platform: CreatorPlatform, input?: CreatorSchedu
 
 function buildCaptionFromParts(parts: CreatorThreadPart[]) {
   return parts.map((part) => part.content).join("\n\n").trim();
+}
+
+function parseSeoKeywordList(raw: string) {
+  const seen = new Set<string>();
+  const parsed: string[] = [];
+
+  for (const line of raw.split(/\r?\n/)) {
+    const cleaned = line
+      .trim()
+      .replace(/^[-*•]\s*/, "")
+      .replace(/^#+\s*/, "")
+      .replace(/^##+\s*/, "")
+      .replace(/^"+|"+$/g, "")
+      .replace(/^\[+|\]+$/g, "")
+      .trim();
+
+    if (!cleaned || cleaned.endsWith(":") || cleaned.toLowerCase().includes("keyword google ads")) {
+      continue;
+    }
+
+    const normalized = cleaned.toLowerCase();
+
+    if (seen.has(normalized)) {
+      continue;
+    }
+
+    seen.add(normalized);
+    parsed.push(cleaned);
+  }
+
+  return parsed;
+}
+
+function buildSeoKeywordConfig(enabled: boolean, raw: string): SeoKeywordConfig {
+  return {
+    enabled,
+    keywords: enabled ? parseSeoKeywordList(raw) : []
+  };
+}
+
+function computeKeywordContextScore(keyword: string, topic: string, caption: string) {
+  const haystack = `${topic} ${caption}`.toLowerCase();
+  const parts = keyword.toLowerCase().split(/\s+/).filter(Boolean);
+  let score = 0;
+
+  for (const part of parts) {
+    if (haystack.includes(part)) {
+      score += part.length > 4 ? 3 : 1;
+    }
+  }
+
+  if (haystack.includes("villa") && keyword.toLowerCase().includes("villa")) score += 6;
+  if (haystack.includes("resort") && keyword.toLowerCase().includes("resort")) score += 6;
+  if (haystack.includes("homestay") && keyword.toLowerCase().includes("homestay")) score += 6;
+  if (haystack.includes("penginapan") && keyword.toLowerCase().includes("penginapan")) score += 6;
+  if (haystack.includes("booking") && keyword.toLowerCase().includes("booking")) score += 4;
+  if (haystack.includes("reservasi") && keyword.toLowerCase().includes("reservasi")) score += 4;
+  if (haystack.includes("website") && keyword.toLowerCase().includes("website")) score += 4;
+  if (haystack.includes("hotel") && keyword.toLowerCase().includes("hotel")) score += 2;
+
+  return score;
+}
+
+function selectSeoKeywords(config: SeoKeywordConfig, topic: string, caption: string) {
+  if (!config.enabled || config.keywords.length === 0) {
+    return [];
+  }
+
+  const targetCount = caption.length <= 320 ? 7 : 6;
+  const shuffled = [...config.keywords]
+    .map((keyword) => ({
+      keyword,
+      score: computeKeywordContextScore(keyword, topic, caption),
+      random: Math.random()
+    }))
+    .sort((left, right) => {
+      if (right.score !== left.score) {
+        return right.score - left.score;
+      }
+
+      return left.random - right.random;
+    });
+
+  return shuffled.slice(0, Math.min(targetCount, shuffled.length)).map((entry) => entry.keyword);
+}
+
+function ensureCaptionContainsSeoKeywords(
+  caption: string,
+  topic: string,
+  config: SeoKeywordConfig
+) {
+  if (!config.enabled || config.keywords.length === 0) {
+    return caption.trim();
+  }
+
+  const normalizedCaption = caption.trim();
+  const targetKeywords = selectSeoKeywords(config, topic, normalizedCaption);
+
+  if (targetKeywords.length === 0) {
+    return normalizedCaption;
+  }
+
+  const existingCount = targetKeywords.filter((keyword) =>
+    normalizedCaption.toLowerCase().includes(keyword.toLowerCase())
+  ).length;
+
+  if (existingCount >= Math.min(6, targetKeywords.length)) {
+    return normalizedCaption;
+  }
+
+  const missingKeywords = targetKeywords.filter(
+    (keyword) => !normalizedCaption.toLowerCase().includes(keyword.toLowerCase())
+  );
+  const suffix = `Pencarian terkait: ${missingKeywords.join(", ")}.`;
+
+  return normalizedCaption ? `${normalizedCaption}\n\n${suffix}` : suffix;
+}
+
+function buildSeoPromptInstruction(config: SeoKeywordConfig) {
+  if (!config.enabled || config.keywords.length === 0) {
+    return "";
+  }
+
+  return `
+SEO Keyword config:
+- Caption WAJIB memasukkan minimal 6 keyword exact-match dari list SEO.
+- Jika caption masih ringkas dan tetap natural, boleh masukkan 7 keyword.
+- Pilih keyword yang paling relevan dengan konteks topik, jangan asal campur kategori yang tidak nyambung.
+- Gunakan keyword apa adanya tanpa tanda kutip atau tanda kurung siku.
+- Sisipkan keyword secara natural di body caption atau di penutup "Pencarian terkait".
+- List keyword SEO:
+${config.keywords.map((keyword) => `  - ${keyword}`).join("\n")}
+`;
 }
 
 function compactWords(value: string, maxWords: number, fallback: string) {
@@ -1855,7 +1993,8 @@ function buildPlatformPrompt({
   topic,
   role,
   tone,
-  objective
+  objective,
+  seoKeywordInstruction
 }: {
   platform: CreatorPlatform;
   profile: CreatorProfile;
@@ -1865,6 +2004,7 @@ function buildPlatformPrompt({
   role: CreatorRole;
   tone: CreatorTone;
   objective: CreatorObjective;
+  seoKeywordInstruction: string;
 }) {
   const meta = getPlatformMeta(platform);
   const imageInstruction =
@@ -1919,6 +2059,7 @@ Task:
 - Hook harus kuat sejak kalimat awal.
 - Format output harus cocok dengan karakter platform ini, bukan copywriting generik lintas platform.
 - Jika platform adalah Threads, tulis dari sudut pandang owner atau advisor bisnis. Fokus pada dampak bisnis, keputusan owner, revenue, booking, biaya, dan solusi. Hindari penjelasan teknis implementasi.
+${seoKeywordInstruction}
 
 Return JSON:
 {
@@ -2015,6 +2156,9 @@ async function createRegeneratedDraft(
 ) {
   const meta = getPlatformMeta(draft.platform);
   const memorySummary = await buildStyleMemorySummary(draft.platform, 8);
+  const settings = await readSettings();
+  const seoKeywordConfig = buildSeoKeywordConfig(settings.seoKeywordEnabled, settings.seoKeywordList);
+  const seoKeywordInstruction = buildSeoPromptInstruction(seoKeywordConfig);
   const prompt = `
 Platform: ${meta.label}
 Current draft:
@@ -2043,6 +2187,7 @@ Task:
 - Pastikan hook lebih kuat.
 - Jangan generik.
 - Instruction tambahan user: ${instruction?.trim() || "buat versi lebih refined dan engaging"}
+${seoKeywordInstruction}
 
 Return JSON:
 {
@@ -2067,27 +2212,32 @@ Return JSON:
   const raw = await callCreatorModel(prompt);
   const parsed = parseJsonPayload(raw) as GeneratedDraftSeed;
   const parts = normalizeGeneratedParts(parsed.parts, draft.type, draft.platform);
-  const caption = String(parsed.caption ?? "").trim() || buildCaptionFromParts(parts);
+  const nextTopic = String(parsed.topic ?? draft.topic).trim() || draft.topic;
+  const caption = ensureCaptionContainsSeoKeywords(
+    String(parsed.caption ?? "").trim() || buildCaptionFromParts(parts),
+    nextTopic,
+    seoKeywordConfig
+  );
   const visualPrompt = meta.requiresImage
     ? composeBrandedVisualPrompt(
         draft.platform,
         profile,
         {
-          topic: String(parsed.topic ?? draft.topic).trim() || draft.topic,
+          topic: nextTopic,
           caption
         },
         parsed
       )
     : undefined;
   const image = await generateVisualIfNeeded(draft.platform, profile, {
-    topic: String(parsed.topic ?? draft.topic).trim() || draft.topic,
+    topic: nextTopic,
     caption,
     visualPrompt,
     visualConcept: parsed
   });
 
   return {
-    topic: String(parsed.topic ?? draft.topic).trim() || draft.topic,
+    topic: nextTopic,
     hookStyle: String(parsed.hookStyle ?? draft.hookStyle).trim() || draft.hookStyle,
     caption,
     visualPrompt,
@@ -2303,6 +2453,9 @@ export async function simulateCreatorDrafts(input?: {
   const tone = (input?.tone ?? profile.defaultTone) as CreatorTone;
   const objective = (input?.objective ?? profile.objective) as CreatorObjective;
   const type = (input?.type ?? meta.defaultType) as CreatorDraftType;
+  const settings = await readSettings();
+  const seoKeywordConfig = buildSeoKeywordConfig(settings.seoKeywordEnabled, settings.seoKeywordList);
+  const seoKeywordInstruction = buildSeoPromptInstruction(seoKeywordConfig);
   const manualTopic = input?.topic?.trim();
   const generatedDrafts: GeneratedDraftSeed[] = [];
   const topicReferences: string[] = [];
@@ -2317,7 +2470,8 @@ export async function simulateCreatorDrafts(input?: {
         topic: manualTopic,
         role,
         tone,
-        objective
+        objective,
+        seoKeywordInstruction
       })
     );
     const parsed = parseJsonPayload(raw) as { drafts?: GeneratedDraftSeed[] };
@@ -2335,7 +2489,8 @@ export async function simulateCreatorDrafts(input?: {
           topic: buildDraftTopicInstruction(mapTopicBrief(topicBrief)),
           role,
           tone,
-          objective
+          objective,
+          seoKeywordInstruction
         })
       );
       const parsed = parseJsonPayload(raw) as { drafts?: GeneratedDraftSeed[] };
@@ -2357,21 +2512,27 @@ export async function simulateCreatorDrafts(input?: {
   for (const [index, generatedDraft] of generatedDrafts.slice(0, count).entries()) {
     const previewTime = now();
     const parts = normalizeGeneratedParts(generatedDraft.parts, type, platform);
-    const caption = String(generatedDraft.caption ?? "").trim() || buildCaptionFromParts(parts);
+    const topicForDraft =
+      String(generatedDraft.topic ?? manualTopic ?? topicReferences[index] ?? `${meta.label} preview`).trim() ||
+      `${meta.label} preview`;
+    const caption = ensureCaptionContainsSeoKeywords(
+      String(generatedDraft.caption ?? "").trim() || buildCaptionFromParts(parts),
+      topicForDraft,
+      seoKeywordConfig
+    );
     const visualPrompt = meta.requiresImage
       ? composeBrandedVisualPrompt(
           platform,
           profile,
           {
-            topic:
-              String(generatedDraft.topic ?? input?.topic ?? `${meta.label} preview`).trim() || `${meta.label} preview`,
+            topic: topicForDraft,
             caption
           },
           generatedDraft
         )
       : undefined;
     const image = await generateVisualIfNeeded(platform, profile, {
-      topic: String(generatedDraft.topic ?? input?.topic ?? `${meta.label} preview`).trim() || `${meta.label} preview`,
+      topic: topicForDraft,
       caption,
       visualPrompt,
       visualConcept: generatedDraft
@@ -2386,9 +2547,7 @@ export async function simulateCreatorDrafts(input?: {
       role,
       tone,
       objective,
-      topic:
-        String(generatedDraft.topic ?? manualTopic ?? topicReferences[index] ?? `${meta.label} preview`).trim() ||
-        `${meta.label} preview`,
+      topic: topicForDraft,
       hookStyle: String(generatedDraft.hookStyle ?? "curiosity").trim() || "curiosity",
       visualPrompt,
       imageUrl: image.imageUrl,
@@ -2465,6 +2624,9 @@ export async function generateCreatorDrafts(input?: {
   const tone = (input?.tone ?? profile.defaultTone) as CreatorTone;
   const objective = (input?.objective ?? profile.objective) as CreatorObjective;
   const type = (input?.type ?? meta.defaultType) as CreatorDraftType;
+  const settings = await readSettings();
+  const seoKeywordConfig = buildSeoKeywordConfig(settings.seoKeywordEnabled, settings.seoKeywordList);
+  const seoKeywordInstruction = buildSeoPromptInstruction(seoKeywordConfig);
   const autoSend = input?.autoSend !== false;
   const generationMode = input?.generationMode ?? "manual";
   const generationSlotKey = input?.generationSlotKey?.trim() || undefined;
@@ -2485,7 +2647,8 @@ export async function generateCreatorDrafts(input?: {
         topic: manualTopic,
         role,
         tone,
-        objective
+        objective,
+        seoKeywordInstruction
       })
     );
     const parsed = parseJsonPayload(raw) as { drafts?: GeneratedDraftSeed[] };
@@ -2506,7 +2669,8 @@ export async function generateCreatorDrafts(input?: {
           topic: buildDraftTopicInstruction(mappedBrief),
           role,
           tone,
-          objective
+          objective,
+          seoKeywordInstruction
         })
       );
       const parsed = parseJsonPayload(raw) as { drafts?: GeneratedDraftSeed[] };
@@ -2534,24 +2698,27 @@ export async function generateCreatorDrafts(input?: {
     const generatedDraft = generated.seed;
     const createdAt = now();
     const parts = normalizeGeneratedParts(generatedDraft.parts, type, platform);
-    const caption = String(generatedDraft.caption ?? "").trim() || buildCaptionFromParts(parts);
+    const topicForDraft =
+      String(generatedDraft.topic ?? manualTopic ?? generated.fallbackTopic ?? `${meta.label} content`).trim() ||
+      `${meta.label} content`;
+    const caption = ensureCaptionContainsSeoKeywords(
+      String(generatedDraft.caption ?? "").trim() || buildCaptionFromParts(parts),
+      topicForDraft,
+      seoKeywordConfig
+    );
     const visualPrompt = meta.requiresImage
       ? composeBrandedVisualPrompt(
           platform,
           profile,
           {
-            topic:
-              String(generatedDraft.topic ?? manualTopic ?? generated.fallbackTopic ?? `${meta.label} content`).trim() ||
-              `${meta.label} content`,
+            topic: topicForDraft,
             caption
           },
           generatedDraft
         )
       : undefined;
     const image = await generateVisualIfNeeded(platform, profile, {
-      topic:
-        String(generatedDraft.topic ?? manualTopic ?? generated.fallbackTopic ?? `${meta.label} content`).trim() ||
-        `${meta.label} content`,
+      topic: topicForDraft,
       caption,
       visualPrompt,
       visualConcept: generatedDraft
@@ -2565,9 +2732,7 @@ export async function generateCreatorDrafts(input?: {
       role,
       tone,
       objective,
-      topic:
-        String(generatedDraft.topic ?? manualTopic ?? generated.fallbackTopic ?? `${meta.label} content`).trim() ||
-        `${meta.label} content`,
+      topic: topicForDraft,
       hookStyle: String(generatedDraft.hookStyle ?? "curiosity").trim() || "curiosity",
       visualPrompt,
       imageUrl: image.imageUrl,

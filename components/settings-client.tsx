@@ -66,7 +66,9 @@ const initialSettings: AppSettings = {
   linkedinOrganizationUrn: "",
   linkedinApiVersion: "202504",
   autoPostEnabled: false,
-  schedulerSecret: ""
+  schedulerSecret: "",
+  seoKeywordEnabled: true,
+  seoKeywordList: ""
 };
 
 const voyageDimensionMap: Record<string, number[]> = {
@@ -1278,6 +1280,41 @@ export function SettingsClient() {
             >
               {runningPublisher ? "Menjalankan..." : "Run Publisher Now"}
             </button>
+          </div>
+        </section>
+
+        <section className="rounded-[32px] border border-slate-200/60 bg-white p-6 shadow-panel">
+          <div className="mb-5">
+            <h3 className="text-lg font-semibold text-slate-950">SEO Keyword</h3>
+            <p className="mt-1 text-sm text-slate-500">
+              Berlaku untuk semua media sosial Jaka Creator. Sistem akan memilih 6-7 keyword yang paling relevan lalu memastikan caption mengandung keyword tersebut.
+            </p>
+          </div>
+
+          <div className="space-y-4">
+            <CheckboxField
+              label="Aktifkan SEO Keyword"
+              checked={settings.seoKeywordEnabled}
+              onChange={(nextValue) => setSettings((current) => ({ ...current, seoKeywordEnabled: nextValue }))}
+              description="Saat aktif, generator caption Threads, Instagram, Facebook, dan LinkedIn akan dipaksa menyisipkan minimal 6 keyword dari daftar ini, dan bila masih natural bisa menjadi 7 keyword."
+            />
+
+            <label className="space-y-2">
+              <span className="text-sm font-medium text-slate-700">Daftar Keyword</span>
+              <textarea
+                value={settings.seoKeywordList}
+                onChange={(event) =>
+                  setSettings((current) => ({ ...current, seoKeywordList: event.target.value }))
+                }
+                rows={16}
+                className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm leading-6 text-slate-900"
+                placeholder={'"website hotel"\n"jasa website hotel"\n"booking engine hotel"'}
+              />
+            </label>
+
+            <div className="rounded-2xl bg-slate-50 px-4 py-3 text-sm leading-6 text-slate-600">
+              Format bebas. Boleh pakai heading, tanda kutip, atau bracket seperti daftar Google Ads. Sistem akan membersihkan format itu, memilih keyword acak sesuai konteks, lalu menaruhnya natural di caption atau di penutup "Pencarian terkait".
+            </div>
           </div>
         </section>
 

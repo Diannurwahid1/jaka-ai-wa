@@ -45,7 +45,17 @@ export type CreatorAsyncJob = {
   reason?: string;
 };
 
-const jobStore = new Map<string, CreatorAsyncJob>();
+declare global {
+  // Persist async jobs across Next.js dev recompiles within the same Node process.
+  var creatorJobStoreGlobal: Map<string, CreatorAsyncJob> | undefined;
+}
+
+const jobStore = globalThis.creatorJobStoreGlobal ?? new Map<string, CreatorAsyncJob>();
+
+if (!globalThis.creatorJobStoreGlobal) {
+  globalThis.creatorJobStoreGlobal = jobStore;
+}
+
 const jobRetentionMs = 1000 * 60 * 60;
 
 function nowIso() {

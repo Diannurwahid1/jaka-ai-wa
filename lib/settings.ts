@@ -20,6 +20,64 @@ Jika tidak tahu:
 Jika ditanya harga:
 -> jawab + ajak lanjut.`;
 
+const defaultSeoKeywordList = `"citra digital hotel"
+[citra digital hotel]
+"citra digital hotel website"
+"citra digital hotel promo"
+"citra digital hotel jasa website"
+"citra digital hotel website hotel"
+"website hotel"
+"website hotel murah"
+"jasa website hotel"
+"jasa pembuatan website hotel"
+"pembuatan website hotel"
+"buat website hotel"
+"bikin website hotel"
+"jasa bikin website hotel"
+"jasa buat website hotel"
+"harga website hotel"
+"harga bikin website hotel"
+"biaya website hotel"
+"paket website hotel"
+"website untuk hotel"
+"website hotel profesional"
+"website hotel online"
+"website hotel siap pakai"
+"website hotel dengan booking"
+"website booking hotel"
+"website reservasi hotel"
+"website pemesanan hotel"
+"website villa"
+"website villa murah"
+"jasa website villa"
+"buat website villa"
+"bikin website villa"
+"website resort"
+"jasa website resort"
+"buat website resort"
+"website homestay"
+"jasa website homestay"
+"website penginapan"
+"jasa website penginapan"
+"sistem booking hotel"
+"sistem reservasi hotel"
+"sistem pemesanan hotel"
+"booking engine hotel"
+"sistem booking penginapan"
+"sistem reservasi penginapan"
+"sistem booking villa"
+"sistem booking resort"
+"website booking langsung"
+"booking langsung hotel"
+"aplikasi hotel"
+"aplikasi booking hotel"
+"aplikasi reservasi hotel"
+"aplikasi manajemen hotel"
+"software hotel"
+"software perhotelan"
+"sistem hotel"
+"sistem manajemen hotel"`;
+
 const fallbackSettings: AppSettings = {
   aiAutoReplyEnabled: (process.env.AI_AUTO_REPLY_ENABLED ?? "true").trim().toLowerCase() !== "false",
   creatorGenerationEnabled: (process.env.CREATOR_GENERATION_ENABLED ?? "true").trim().toLowerCase() !== "false",
@@ -84,7 +142,9 @@ const fallbackSettings: AppSettings = {
   linkedinOrganizationUrn: process.env.LINKEDIN_ORGANIZATION_URN ?? "",
   linkedinApiVersion: process.env.LINKEDIN_API_VERSION ?? "202504",
   autoPostEnabled: (process.env.AUTO_POST_ENABLED ?? "").trim().toLowerCase() === "true",
-  schedulerSecret: process.env.SCHEDULER_SECRET ?? ""
+  schedulerSecret: process.env.SCHEDULER_SECRET ?? "",
+  seoKeywordEnabled: (process.env.SEO_KEYWORD_ENABLED ?? "true").trim().toLowerCase() !== "false",
+  seoKeywordList: process.env.SEO_KEYWORD_LIST ?? defaultSeoKeywordList
 };
 
 function sanitizeSettings(input: Partial<AppSettings>, current: AppSettings): AppSettings {
@@ -157,7 +217,9 @@ function sanitizeSettings(input: Partial<AppSettings>, current: AppSettings): Ap
     linkedinOrganizationUrn: input.linkedinOrganizationUrn?.trim() ?? current.linkedinOrganizationUrn,
     linkedinApiVersion: nextLinkedinApiVersion || fallbackSettings.linkedinApiVersion,
     autoPostEnabled: typeof input.autoPostEnabled === "boolean" ? input.autoPostEnabled : current.autoPostEnabled,
-    schedulerSecret: input.schedulerSecret?.trim() ?? current.schedulerSecret
+    schedulerSecret: input.schedulerSecret?.trim() ?? current.schedulerSecret,
+    seoKeywordEnabled: typeof input.seoKeywordEnabled === "boolean" ? input.seoKeywordEnabled : current.seoKeywordEnabled,
+    seoKeywordList: input.seoKeywordList?.trim() ?? current.seoKeywordList
   };
 }
 

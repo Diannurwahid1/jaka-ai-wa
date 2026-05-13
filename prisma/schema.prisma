@@ -67,6 +67,8 @@ model AppConfig {
   linkedinApiVersion  String   @default("202504")
   autoPostEnabled     Boolean  @default(false)
   schedulerSecret     String   @default("")
+  seoKeywordEnabled   Boolean  @default(true)
+  seoKeywordList      String   @default("") @db.Text
   createdAt           DateTime @default(now())
   updatedAt           DateTime @updatedAt
 }

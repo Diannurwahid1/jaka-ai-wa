@@ -137,6 +137,27 @@ function formatStatus(status: CreatorDraft["status"]) {
   return status.replace(/_/g, " ");
 }
 
+const draftStatusSortPriority: Record<CreatorDraft["status"], number> = {
+  failed: 0,
+  pending_approval: 1,
+  draft: 2,
+  approved: 3,
+  scheduled: 4,
+  rejected: 5,
+  posted: 6
+};
+
+function compareDraftsByStatus(left: CreatorDraft, right: CreatorDraft) {
+  const leftPriority = draftStatusSortPriority[left.status];
+  const rightPriority = draftStatusSortPriority[right.status];
+
+  if (leftPriority !== rightPriority) {
+    return leftPriority - rightPriority;
+  }
+
+  return new Date(right.updatedAt).getTime() - new Date(left.updatedAt).getTime();
+}
+
 function formatJobStatus(status: CreatorAsyncJob["status"]) {
   if (status === "queued") {
     return "Masuk antrean";
@@ -299,6 +320,7 @@ export function CreatorClient({ platform }: { platform: CreatorPlatform }) {
   const [draftPage, setDraftPage] = useState(1);
   const [draftLimit, setDraftLimit] = useState<number | "all">(5);
   const [draftStatusFilter, setDraftStatusFilter] = useState<string>("all");
+  const [draftSortBy, setDraftSortBy] = useState<"latest" | "status_asc" | "status_desc">("latest");
   const [expandedDrafts, setExpandedDrafts] = useState<Record<string, boolean>>({});
 
   const refreshOverview = useCallback(async () => {
@@ -642,8 +664,19 @@ export function CreatorClient({ platform }: { platform: CreatorPlatform }) {
   const totalTopicPages = topicLimit === "all" ? 1 : Math.ceil(filteredTopics.length / topicLimit);
 
   const filteredDrafts = overview?.drafts.filter((d) => draftStatusFilter === "all" || d.status === draftStatusFilter) || [];
-  const displayedDrafts = draftLimit === "all" ? filteredDrafts : filteredDrafts.slice((draftPage - 1) * draftLimit, draftPage * draftLimit);
-  const totalDraftPages = draftLimit === "all" ? 1 : Math.ceil(filteredDrafts.length / draftLimit);
+  const sortedDrafts = [...filteredDrafts].sort((left, right) => {
+    if (draftSortBy === "status_asc") {
+      return compareDraftsByStatus(left, right);
+    }
+
+    if (draftSortBy === "status_desc") {
+      return compareDraftsByStatus(right, left);
+    }
+
+    return new Date(right.updatedAt).getTime() - new Date(left.updatedAt).getTime();
+  });
+  const displayedDrafts = draftLimit === "all" ? sortedDrafts : sortedDrafts.slice((draftPage - 1) * draftLimit, draftPage * draftLimit);
+  const totalDraftPages = draftLimit === "all" ? 1 : Math.ceil(sortedDrafts.length / draftLimit);
   const draftItemsReadyToApprove = overview?.drafts.filter((draft) => draft.status === "draft") || [];
 
   async function handleApproveAllDrafts() {
@@ -1094,6 +1127,11 @@ export function CreatorClient({ platform }: { platform: CreatorPlatform }) {
                       <option value="rejected">Rejected</option>
                       <option value="posted">Posted</option>
                       <option value="failed">Failed</option>
+                    </select>
+                    <select value={draftSortBy} onChange={(e) => { setDraftSortBy(e.target.value as "latest" | "status_asc" | "status_desc"); setDraftPage(1); }} className="rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs text-slate-700">
+                      <option value="latest">Sort: Terbaru</option>
+                      <option value="status_asc">Sort: Status Prioritas</option>
+                      <option value="status_desc">Sort: Status Terendah</option>
                     </select>
                     <select value={String(draftLimit)} onChange={(e) => { setDraftLimit(e.target.value === "all" ? "all" : Number(e.target.value)); setDraftPage(1); }} className="rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs text-slate-700">
                       <option value="5">Tampil 5</option>

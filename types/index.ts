@@ -74,6 +74,8 @@ export type AppSettings = {
   linkedinApiVersion: string;
   autoPostEnabled: boolean;
   schedulerSecret: string;
+  seoKeywordEnabled: boolean;
+  seoKeywordList: string;
 };
 
 export type DashboardOverview = {
