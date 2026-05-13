@@ -1313,7 +1313,7 @@ export function SettingsClient() {
             </label>
 
             <div className="rounded-2xl bg-slate-50 px-4 py-3 text-sm leading-6 text-slate-600">
-              Format bebas. Boleh pakai heading, tanda kutip, atau bracket seperti daftar Google Ads. Sistem akan membersihkan format itu, memilih keyword acak sesuai konteks, lalu menaruhnya natural di caption atau di penutup "Pencarian terkait".
+              Format bebas. Boleh pakai heading, tanda kutip, atau bracket seperti daftar Google Ads. Sistem akan membersihkan format itu, memilih keyword acak sesuai konteks, lalu menaruhnya natural di caption atau di penutup &quot;Pencarian terkait&quot;.
             </div>
           </div>
         </section>
