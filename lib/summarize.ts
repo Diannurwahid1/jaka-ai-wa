@@ -3,6 +3,7 @@ import { readSettings } from "@/lib/settings";
 import { MemoryMessage } from "@/types/memory";
 
 export async function summarizeConversation(
+  businessId: string,
   messages: MemoryMessage[],
   existingSummary?: string
 ) {
@@ -10,7 +11,7 @@ export async function summarizeConversation(
     return existingSummary?.trim() ?? "";
   }
 
-  const settings = await readSettings();
+  const settings = await readSettings(businessId);
 
   if (!settings.aiApiKey || !settings.aiApiUrl) {
     throw new Error("AI configuration is incomplete.");

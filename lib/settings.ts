@@ -1,5 +1,7 @@
 import { AppSettings } from "@/types";
 import { prisma } from "@/lib/prisma";
+import { ensureDefaultBusiness } from "@/lib/business";
+import { getCurrentSession } from "@/lib/auth";
 
 const defaultPrompt = `Kamu adalah AI WhatsApp untuk bisnis.
 
@@ -223,32 +225,52 @@ function sanitizeSettings(input: Partial<AppSettings>, current: AppSettings): Ap
   };
 }
 
-async function ensureConfigRow() {
+async function ensureConfigRow(businessId: string) {
   return prisma.appConfig.upsert({
-    where: { id: 1 },
+    where: { businessId },
     update: {},
     create: {
-      id: 1,
+      businessId,
       ...fallbackSettings
     }
   });
 }
 
-export async function readSettings(): Promise<AppSettings> {
-  const config = await ensureConfigRow();
+async function resolveBusinessId(businessId?: string) {
+  if (businessId?.trim()) {
+    return businessId.trim();
+  }
 
+  try {
+    const session = await getCurrentSession();
+    if (session?.businessId) {
+      return session.businessId;
+    }
+  } catch {
+    // getCurrentSession depends on next/headers cookies() which throws outside a request scope.
+    // Fall back to default business in that case (e.g. boot, scripts, tests).
+  }
+
+  const fallback = await ensureDefaultBusiness();
+  return fallback.id;
+}
+
+export async function readSettings(businessId?: string): Promise<AppSettings> {
+  const resolvedId = await resolveBusinessId(businessId);
+  const config = await ensureConfigRow(resolvedId);
   return sanitizeSettings(config, fallbackSettings);
 }
 
-export async function writeSettings(input: Partial<AppSettings>) {
-  const current = await readSettings();
+export async function writeSettings(input: Partial<AppSettings>, businessId?: string) {
+  const resolvedId = await resolveBusinessId(businessId);
+  const current = await readSettings(resolvedId);
   const nextValue = sanitizeSettings(input, current);
 
   const updated = await prisma.appConfig.upsert({
-    where: { id: 1 },
+    where: { businessId: resolvedId },
     update: nextValue,
     create: {
-      id: 1,
+      businessId: resolvedId,
       ...nextValue
     }
   });

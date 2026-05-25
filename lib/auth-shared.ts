@@ -7,6 +7,7 @@ export const SESSION_DURATION_SECONDS = 60 * 60 * 24 * 7;
 export type AdminSession = {
   sub: string;
   email: string;
+  businessId: string;
 };
 
 function getDefaultPort(protocol: string) {
@@ -59,7 +60,8 @@ export async function verifySessionToken(token: string) {
 
   return {
     sub: verified.payload.sub ?? "",
-    email: String(verified.payload.email ?? "")
+    email: String(verified.payload.email ?? ""),
+    businessId: String(verified.payload.businessId ?? "")
   } satisfies AdminSession;
 }
 

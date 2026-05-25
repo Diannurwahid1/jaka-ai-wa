@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import { MongoClient } from "mongodb";
 import MongoRAG, { MongoRAGSearchResult } from "mongodb-rag";
 
+import { postChatCompletion } from "@/lib/ai-client";
 import { readSettings } from "@/lib/settings";
 
 type KnowledgeInput = {
@@ -35,6 +36,12 @@ type RagRuntimeConfig = {
   };
 };
 
+type RagClientCache = {
+  signature: string;
+  mongoClientPromise: Promise<MongoClient>;
+  ragClientPromise: Promise<MongoRAG | null>;
+};
+
 const FALLBACK_ANSWER = "Maaf, informasi belum tersedia ya \uD83D\uDE4F";
 const DEFAULT_MONGODB_EMBEDDING_BASE_URL = "https://ai.mongodb.com/v1";
 const DEFAULT_MONGODB_EMBEDDING_MODEL = "voyage-4-large";
@@ -57,9 +64,7 @@ const VOYAGE_MODEL_DIMENSIONS: Record<string, number[]> = {
   "voyage-code-2": [1536]
 };
 
-let mongoClientPromise: Promise<MongoClient> | null = null;
-let ragClientPromise: Promise<MongoRAG> | null = null;
-let activeConfigSignature = "";
+const ragClientCache = new Map<string, RagClientCache>();
 
 function buildSignature(config: RagRuntimeConfig) {
   return JSON.stringify(config);
@@ -147,8 +152,8 @@ async function createAtlasEmbedding(
   return extractEmbedding(payload);
 }
 
-async function getRuntimeConfig(): Promise<RagRuntimeConfig> {
-  const settings = await readSettings();
+async function getRuntimeConfig(businessId: string): Promise<RagRuntimeConfig> {
+  const settings = await readSettings(businessId);
   const provider = normalizeProvider(settings.embeddingProvider);
 
   if (!settings.mongodbUri.trim()) {
@@ -183,22 +188,24 @@ async function getRuntimeConfig(): Promise<RagRuntimeConfig> {
   };
 }
 
-async function ensureClients() {
-  const config = await getRuntimeConfig();
+async function ensureClients(businessId: string) {
+  const config = await getRuntimeConfig(businessId);
   const nextSignature = buildSignature(config);
+  const cached = ragClientCache.get(businessId);
 
-  if (nextSignature === activeConfigSignature && mongoClientPromise && ragClientPromise) {
-    return { config, signature: nextSignature };
+  if (cached && cached.signature === nextSignature) {
+    return { config, cache: cached };
   }
 
-  mongoClientPromise = null;
-  ragClientPromise = null;
-  activeConfigSignature = nextSignature;
+  if (cached) {
+    cached.mongoClientPromise.then((client) => client.close().catch(() => undefined)).catch(() => undefined);
+    ragClientCache.delete(businessId);
+  }
 
   const client = new MongoClient(config.mongoUrl);
-  mongoClientPromise = client.connect().then(() => client);
+  const mongoClientPromise = client.connect().then(() => client);
 
-  ragClientPromise = usesMongoRagProvider(config.embedding.provider)
+  const ragClientPromise = usesMongoRagProvider(config.embedding.provider)
     ? (async () => {
         const rag = new MongoRAG({
           mongoUrl: config.mongoUrl,
@@ -217,33 +224,36 @@ async function ensureClients() {
         await rag.connect();
         return rag;
       })()
-    : Promise.resolve(null as unknown as MongoRAG);
+    : Promise.resolve<MongoRAG | null>(null);
 
-  return { config, signature: nextSignature };
+  const next: RagClientCache = {
+    signature: nextSignature,
+    mongoClientPromise,
+    ragClientPromise
+  };
+  ragClientCache.set(businessId, next);
+
+  return { config, cache: next };
 }
 
-async function getMongoClient() {
-  await ensureClients();
+async function getMongoClient(businessId: string) {
+  const { cache } = await ensureClients(businessId);
+  return cache.mongoClientPromise;
+}
 
-  if (!mongoClientPromise) {
-    throw new Error("MongoDB client is not initialized.");
+async function getRagClient(businessId: string) {
+  const { cache } = await ensureClients(businessId);
+  const rag = await cache.ragClientPromise;
+
+  if (!rag) {
+    throw new Error("MongoRAG client is not initialized for this provider.");
   }
 
-  return mongoClientPromise;
+  return rag;
 }
 
-async function getRagClient() {
-  await ensureClients();
-
-  if (!ragClientPromise) {
-    throw new Error("MongoRAG client is not initialized.");
-  }
-
-  return ragClientPromise;
-}
-
-async function getRagConfig() {
-  const { config } = await ensureClients();
+async function getRagConfig(businessId: string) {
+  const { config } = await ensureClients(businessId);
   return config;
 }
 
@@ -260,7 +270,13 @@ function normalizeKnowledgeResult(result: MongoRAGSearchResult): KnowledgeResult
   };
 }
 
-export async function ingestKnowledge(data: KnowledgeInput) {
+export async function getKnowledgeCollection(businessId: string) {
+  const client = await getMongoClient(businessId);
+  const config = await getRagConfig(businessId);
+  return client.db(config.database).collection(config.collection);
+}
+
+export async function ingestKnowledge(businessId: string, data: KnowledgeInput) {
   const title = data.title.trim();
   const content = data.content.trim();
   const category = data.category?.trim();
@@ -269,7 +285,7 @@ export async function ingestKnowledge(data: KnowledgeInput) {
     throw new Error("title and content are required");
   }
 
-  const config = await getRagConfig();
+  const config = await getRagConfig(businessId);
   const createdAt = new Date().toISOString();
   const documentId = randomUUID();
 
@@ -289,7 +305,7 @@ export async function ingestKnowledge(data: KnowledgeInput) {
   let result = { processed: 1, failed: 0 };
 
   if (usesAtlasEmbeddingProvider(config.embedding.provider)) {
-    const collection = await getKnowledgeCollection();
+    const collection = await getKnowledgeCollection(businessId);
     const embedding = await createAtlasEmbedding(config, content);
 
     await collection.insertOne({
@@ -297,7 +313,7 @@ export async function ingestKnowledge(data: KnowledgeInput) {
       embedding
     });
   } else {
-    const rag = await getRagClient();
+    const rag = await getRagClient(businessId);
     result = await rag.ingestBatch([document], {
       database: config.database,
       collection: config.collection
@@ -311,16 +327,16 @@ export async function ingestKnowledge(data: KnowledgeInput) {
   };
 }
 
-export async function searchKnowledge(query: string) {
+export async function searchKnowledge(businessId: string, query: string) {
   const trimmedQuery = query.trim();
 
   if (!trimmedQuery) {
     return [] as KnowledgeResult[];
   }
 
-  const config = await getRagConfig();
+  const config = await getRagConfig(businessId);
   if (usesAtlasEmbeddingProvider(config.embedding.provider)) {
-    const collection = await getKnowledgeCollection();
+    const collection = await getKnowledgeCollection(businessId);
     const embedding = await createAtlasEmbedding(config, trimmedQuery);
     const results = await collection
       .aggregate<{
@@ -364,7 +380,7 @@ export async function searchKnowledge(query: string) {
     }));
   }
 
-  const rag = await getRagClient();
+  const rag = await getRagClient(businessId);
   const results = await rag.search(trimmedQuery, {
     database: config.database,
     collection: config.collection,
@@ -379,8 +395,8 @@ export function buildContext(results: KnowledgeResult[]) {
   return results.map((item) => `- ${item.title}: ${item.content}`).join("\n");
 }
 
-export async function retrieveKnowledgeContext(query: string) {
-  const results = await searchKnowledge(query);
+export async function retrieveKnowledgeContext(businessId: string, query: string) {
+  const results = await searchKnowledge(businessId, query);
 
   return {
     results,
@@ -388,14 +404,14 @@ export async function retrieveKnowledgeContext(query: string) {
   };
 }
 
-export async function askWithRAG(query: string) {
+export async function askWithRAG(businessId: string, query: string) {
   const trimmedQuery = query.trim();
 
   if (!trimmedQuery) {
     throw new Error("message is required");
   }
 
-  const { results, context } = await retrieveKnowledgeContext(trimmedQuery);
+  const { results, context } = await retrieveKnowledgeContext(businessId, trimmedQuery);
 
   if (results.length === 0) {
     return {
@@ -405,7 +421,7 @@ export async function askWithRAG(query: string) {
     };
   }
 
-  const settings = await readSettings();
+  const settings = await readSettings(businessId);
 
   if (!settings.aiApiKey || !settings.aiApiUrl) {
     throw new Error("AI configuration is incomplete.");
@@ -445,8 +461,8 @@ export async function askWithRAG(query: string) {
   };
 }
 
-export async function listKnowledge(limit = 50) {
-  const collection = await getKnowledgeCollection();
+export async function listKnowledge(businessId: string, limit = 50) {
+  const collection = await getKnowledgeCollection(businessId);
   const documents = await collection
     .find({}, { projection: { _id: 0, embedding: 0 } })
     .sort({ createdAt: -1 })
@@ -462,20 +478,14 @@ export async function listKnowledge(limit = 50) {
   }));
 }
 
-export async function deleteKnowledge(documentId: string) {
-  const collection = await getKnowledgeCollection();
+export async function deleteKnowledge(businessId: string, documentId: string) {
+  const collection = await getKnowledgeCollection(businessId);
   const result = await collection.deleteOne({ documentId });
   return result.deletedCount > 0;
 }
 
-export async function getKnowledgeCollection() {
-  const client = await getMongoClient();
-  const config = await getRagConfig();
-  return client.db(config.database).collection(config.collection);
-}
-
-export async function testEmbeddingConnection() {
-  const config = await getRagConfig();
+export async function testEmbeddingConnection(businessId: string) {
+  const config = await getRagConfig(businessId);
 
   if (usesAtlasEmbeddingProvider(config.embedding.provider)) {
     const vector = await createAtlasEmbedding(
@@ -492,7 +502,7 @@ export async function testEmbeddingConnection() {
     };
   }
 
-  const rag = await getRagClient();
+  const rag = await getRagClient(businessId);
   const vector = await (rag as unknown as { getEmbedding: (input: string) => Promise<number[]> }).getEmbedding(
     "Tes koneksi embedding untuk aplikasi WA AI Control Center."
   );
@@ -505,4 +515,3 @@ export async function testEmbeddingConnection() {
     baseUrl: config.embedding.baseUrl
   };
 }
-import { postChatCompletion } from "@/lib/ai-client";

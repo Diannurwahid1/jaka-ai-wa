@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 
+import { requireSession } from "@/lib/auth";
 import { exchangeLinkedInAuthorizationCode } from "@/lib/social";
 
 function getAppBaseUrl(request: NextRequest) {
@@ -29,7 +30,8 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    await exchangeLinkedInAuthorizationCode(code);
+    const session = await requireSession();
+    await exchangeLinkedInAuthorizationCode(session.businessId, code);
     return settingsRedirect(request, "?linkedin=connected");
   } catch (caughtError) {
     const reason = caughtError instanceof Error ? caughtError.message : "unknown";

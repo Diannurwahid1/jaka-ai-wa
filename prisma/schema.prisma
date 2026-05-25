@@ -6,8 +6,32 @@ datasource db {
   provider = "postgresql"
 }
 
+model Business {
+  id           String   @id @default(uuid())
+  slug         String   @unique
+  name         String
+  niche        String   @default("")
+  brandSummary String   @default("") @db.Text
+  audience     String   @default("") @db.Text
+  brandVisualStyle String @default("") @db.Text
+  isDefault    Boolean  @default(false)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  appConfig     AppConfig?
+  adminUsers    AdminUser[]
+  messages      MessageLog[]
+  memorySessions MemorySession[]
+  memoryMessages MemoryMessage[]
+  webhookEvents  WebhookEvent[]
+
+  @@index([isDefault])
+}
+
 model AppConfig {
-  id                  Int      @id
+  id                  Int      @id @default(autoincrement())
+  businessId          String   @unique
+  business            Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
   aiAutoReplyEnabled  Boolean  @default(true)
   creatorGenerationEnabled Boolean @default(true)
   aiApiUrl            String
@@ -71,64 +95,79 @@ model AppConfig {
   seoKeywordList      String   @default("") @db.Text
   createdAt           DateTime @default(now())
   updatedAt           DateTime @updatedAt
+
+  @@index([waSessionId])
 }
 
 model AdminUser {
   id           String   @id @default(uuid())
+  businessId   String
+  business     Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
   email        String   @unique
   passwordHash String
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
+
+  @@index([businessId])
 }
 
 model MessageLog {
-  id        String   @id @default(uuid())
-  fromPhone String
-  message   String   @db.Text
-  reply     String   @db.Text
-  source    String
-  status    String
-  intent    String
-  createdAt DateTime @default(now())
-  error     String?  @db.Text
+  id         String   @id @default(uuid())
+  businessId String
+  business   Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  fromPhone  String
+  message    String   @db.Text
+  reply      String   @db.Text
+  source     String
+  status     String
+  intent     String
+  createdAt  DateTime @default(now())
+  error      String?  @db.Text
 
-  @@index([createdAt])
-  @@index([fromPhone])
+  @@index([businessId, createdAt])
+  @@index([businessId, fromPhone])
 }
 
 model MemorySession {
-  phone      String          @id
-  summary    String          @default("") @db.Text
+  businessId String
+  business   Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  phone      String
+  summary    String   @default("") @db.Text
   lastActive DateTime
-  createdAt  DateTime        @default(now())
-  updatedAt  DateTime        @updatedAt
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
   messages   MemoryMessage[]
 
-  @@index([lastActive])
+  @@id([businessId, phone])
+  @@index([businessId, lastActive])
 }
 
 model MemoryMessage {
-  id        String        @id @default(uuid())
-  phone     String
-  role      String
-  content   String        @db.Text
-  createdAt DateTime      @default(now())
-  session   MemorySession @relation(fields: [phone], references: [phone], onDelete: Cascade)
+  id         String        @id @default(uuid())
+  businessId String
+  business   Business      @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  phone      String
+  role       String
+  content    String        @db.Text
+  createdAt  DateTime      @default(now())
+  session    MemorySession @relation(fields: [businessId, phone], references: [businessId, phone], onDelete: Cascade)
 
-  @@index([phone, createdAt])
+  @@index([businessId, phone, createdAt])
 }
 
 model WebhookEvent {
-  id        String   @id @default(uuid())
-  createdAt DateTime @default(now())
-  stage     String
-  fromPhone String?
-  message   String?  @db.Text
-  reason    String?  @db.Text
-  payload   Json?
-  rawBody   String?  @db.Text
-  headers   Json?
+  id         String   @id @default(uuid())
+  businessId String
+  business   Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  createdAt  DateTime @default(now())
+  stage      String
+  fromPhone  String?
+  message    String?  @db.Text
+  reason     String?  @db.Text
+  payload    Json?
+  rawBody    String?  @db.Text
+  headers    Json?
 
-  @@index([createdAt])
-  @@index([stage])
+  @@index([businessId, createdAt])
+  @@index([businessId, stage])
 }

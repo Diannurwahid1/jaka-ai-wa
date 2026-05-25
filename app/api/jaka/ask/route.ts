@@ -1,9 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 
+import { requireSession } from "@/lib/auth";
 import { askJakaAI, JakaHistoryItem } from "@/lib/jaka";
 
 export async function POST(request: NextRequest) {
   try {
+    const session = await requireSession();
     const body = await request.json();
     const question = String(body?.message ?? "");
     const name = String(body?.name ?? "");
@@ -20,7 +22,7 @@ export async function POST(request: NextRequest) {
           .filter((item: JakaHistoryItem) => item.content.trim())
       : [];
 
-    const result = await askJakaAI(question, name, pathname, history);
+    const result = await askJakaAI(session.businessId, question, name, pathname, history);
 
     return NextResponse.json({
       ok: true,

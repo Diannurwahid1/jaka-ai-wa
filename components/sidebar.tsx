@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 import { ChatIcon, CreatorIcon, DashboardIcon, KnowledgeIcon, MonitorIcon, SettingsIcon } from "@/components/icons";
 import { cn } from "@/lib/utils";
@@ -33,6 +33,23 @@ export function Sidebar() {
   const [loggingOut, setLoggingOut] = useState(false);
   const [copied, setCopied] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [businessName, setBusinessName] = useState<string>("");
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/auth/me", { cache: "no-store" })
+      .then((response) => (response.ok ? response.json() : null))
+      .then((payload) => {
+        if (cancelled) return;
+        if (payload?.business?.name) {
+          setBusinessName(String(payload.business.name));
+        }
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   async function handleLogout() {
     setLoggingOut(true);
@@ -74,6 +91,12 @@ export function Sidebar() {
               AI, backend, WA Blast, memory, dan knowledge base dalam satu panel ringan.
             </p>
           </div>
+          {businessName ? (
+            <div className="mt-3 inline-flex items-center gap-2 rounded-2xl border border-slate-200 bg-white px-3 py-2 text-xs text-slate-600 shadow-sm">
+              <span className="h-2 w-2 rounded-full bg-emerald-500" />
+              <span className="font-medium text-slate-900">{businessName}</span>
+            </div>
+          ) : null}
         </div>
 
         <nav className="space-y-2">

@@ -1,10 +1,12 @@
 import { NextResponse } from "next/server";
 
+import { requireSession } from "@/lib/auth";
 import { testR2Connection } from "@/lib/r2";
 
 export async function POST() {
   try {
-    const result = await testR2Connection();
+    const session = await requireSession();
+    const result = await testR2Connection(session.businessId);
     return NextResponse.json({ ok: true, result });
   } catch (error) {
     const reason =

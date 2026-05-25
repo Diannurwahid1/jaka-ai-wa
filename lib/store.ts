@@ -25,8 +25,9 @@ function mapMessage(message: {
   };
 }
 
-export async function getMessages(limit?: number) {
+export async function getMessages(businessId: string, limit?: number) {
   const messages = await prisma.messageLog.findMany({
+    where: { businessId },
     orderBy: { createdAt: "desc" },
     take: typeof limit === "number" ? limit : undefined
   });
@@ -34,9 +35,13 @@ export async function getMessages(limit?: number) {
   return messages.map(mapMessage);
 }
 
-export async function createMessage(message: Omit<MessageLog, "id" | "createdAt">) {
+export async function createMessage(
+  businessId: string,
+  message: Omit<MessageLog, "id" | "createdAt">
+) {
   const created = await prisma.messageLog.create({
     data: {
+      businessId,
       fromPhone: message.from,
       message: message.message,
       reply: message.reply,
@@ -51,6 +56,7 @@ export async function createMessage(message: Omit<MessageLog, "id" | "createdAt"
 }
 
 export async function updateMessage(
+  businessId: string,
   id: string,
   patch: Partial<Pick<MessageLog, "reply" | "status" | "error">>
 ) {
@@ -63,22 +69,29 @@ export async function updateMessage(
     }
   });
 
+  if (updated.businessId !== businessId) {
+    throw new Error("Message log does not belong to this business");
+  }
+
   return mapMessage(updated);
 }
 
-export async function getDashboardOverview({
-  waConfigured,
-  aiConfigured
-}: {
-  waConfigured: boolean;
-  aiConfigured: boolean;
-}): Promise<DashboardOverview> {
+export async function getDashboardOverview(
+  businessId: string,
+  {
+    waConfigured,
+    aiConfigured
+  }: {
+    waConfigured: boolean;
+    aiConfigured: boolean;
+  }
+): Promise<DashboardOverview> {
   const [inbound, replied, success, failed, recent] = await Promise.all([
-    prisma.messageLog.count(),
-    prisma.messageLog.count({ where: { NOT: { reply: "" } } }),
-    prisma.messageLog.count({ where: { status: "success" } }),
-    prisma.messageLog.count({ where: { status: "failed" } }),
-    prisma.messageLog.findMany({ orderBy: { createdAt: "desc" }, take: 8 })
+    prisma.messageLog.count({ where: { businessId } }),
+    prisma.messageLog.count({ where: { businessId, NOT: { reply: "" } } }),
+    prisma.messageLog.count({ where: { businessId, status: "success" } }),
+    prisma.messageLog.count({ where: { businessId, status: "failed" } }),
+    prisma.messageLog.findMany({ where: { businessId }, orderBy: { createdAt: "desc" }, take: 8 })
   ]);
 
   return {
@@ -94,9 +107,10 @@ export async function getDashboardOverview({
   };
 }
 
-export async function getStatusCounts() {
+export async function getStatusCounts(businessId: string) {
   const grouped = await prisma.messageLog.groupBy({
     by: ["status"],
+    where: { businessId },
     _count: { status: true }
   });
 

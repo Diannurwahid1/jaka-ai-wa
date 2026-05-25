@@ -14,19 +14,6 @@ import { prisma } from "@/lib/prisma";
 
 const loginAttempts = new Map<string, { count: number; expiresAt: number }>();
 
-const adminUsers = prisma as typeof prisma & {
-  adminUser: {
-    findFirst: (args: {
-      orderBy: { createdAt: "asc" | "desc" };
-    }) => Promise<{ id: string; email: string; passwordHash: string } | null>;
-    findUnique: (args: { where: { email: string } }) => Promise<{ id: string; email: string; passwordHash: string } | null>;
-    update: (args: {
-      where: { id: string };
-      data: { passwordHash: string };
-    }) => Promise<{ id: string; email: string; passwordHash: string }>;
-  };
-};
-
 export type AdminSecurityState = {
   email: string | null;
   hasAdmin: boolean;
@@ -48,7 +35,7 @@ function getClientIp(request: NextRequest) {
 }
 
 export async function authenticateAdmin(email: string, password: string) {
-  const user = await adminUsers.adminUser.findUnique({
+  const user = await prisma.adminUser.findUnique({
     where: { email: email.trim().toLowerCase() }
   });
 
@@ -66,7 +53,19 @@ export async function authenticateAdmin(email: string, password: string) {
 }
 
 export async function getAdminSecurityState(): Promise<AdminSecurityState> {
-  const user = await adminUsers.adminUser.findFirst({
+  const session = await getCurrentSession();
+
+  if (!session?.businessId) {
+    return {
+      email: null,
+      hasAdmin: false,
+      passwordSource: "database",
+      hasCustomPassword: false
+    };
+  }
+
+  const user = await prisma.adminUser.findFirst({
+    where: { businessId: session.businessId },
     orderBy: { createdAt: "asc" }
   });
 
@@ -88,7 +87,7 @@ export async function getAdminSecurityState(): Promise<AdminSecurityState> {
 }
 
 export async function changeAdminPassword(userId: string, email: string, currentPassword: string, nextPassword: string) {
-  const user = await adminUsers.adminUser.findUnique({
+  const user = await prisma.adminUser.findUnique({
     where: { email: email.trim().toLowerCase() }
   });
 
@@ -114,7 +113,7 @@ export async function changeAdminPassword(userId: string, email: string, current
 
   const passwordHash = await hash(nextPassword, 12);
 
-  await adminUsers.adminUser.update({
+  await prisma.adminUser.update({
     where: { id: user.id },
     data: { passwordHash }
   });
@@ -123,7 +122,7 @@ export async function changeAdminPassword(userId: string, email: string, current
 }
 
 export async function createSessionToken(session: AdminSession) {
-  return new SignJWT({ email: session.email })
+  return new SignJWT({ email: session.email, businessId: session.businessId })
     .setProtectedHeader({ alg: "HS256" })
     .setSubject(session.sub)
     .setIssuedAt()
@@ -144,6 +143,14 @@ export async function getCurrentSession() {
   } catch {
     return null;
   }
+}
+
+export async function requireSession() {
+  const session = await getCurrentSession();
+  if (!session?.businessId) {
+    throw new Error("Unauthorized");
+  }
+  return session;
 }
 
 export function applySessionCookie(response: NextResponse, token: string) {

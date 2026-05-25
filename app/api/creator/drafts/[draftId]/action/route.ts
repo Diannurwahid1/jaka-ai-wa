@@ -1,10 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 
+import { requireSession } from "@/lib/auth";
 import {
   applyCreatorDraftAction,
   publishCreatorDraft,
   sendDraftApprovalMessage,
-  simulateCreatorDraftUpload
+  simulateCreatorDraftUpload,
+  withCreatorBusiness
 } from "@/lib/creator";
 import { CreatorApprovalAction } from "@/types/creator";
 
@@ -23,6 +25,7 @@ export async function POST(
   { params }: { params: { draftId: string } }
 ) {
   try {
+    const session = await requireSession();
     const body = await request.json();
     const action = String(body?.action ?? "").trim().toLowerCase() as
       | CreatorApprovalAction
@@ -41,7 +44,7 @@ export async function POST(
     }
 
     if (action === "send") {
-      await sendDraftApprovalMessage(params.draftId);
+      await withCreatorBusiness(session.businessId, () => sendDraftApprovalMessage(params.draftId));
       console.info("[api.creator.draft-action] Manual send completed", {
         draftId: params.draftId,
         action
@@ -50,23 +53,29 @@ export async function POST(
     }
 
     if (action === "publish") {
-      const result = await publishCreatorDraft(params.draftId, {
-        force: true,
-        appBaseUrl: getAppBaseUrl(request)
-      });
+      const result = await withCreatorBusiness(session.businessId, () =>
+        publishCreatorDraft(params.draftId, {
+          force: true,
+          appBaseUrl: getAppBaseUrl(request)
+        })
+      );
       const status = result.success ? 200 : 500;
       return NextResponse.json({ ok: result.success, result, reason: result.success ? undefined : result.summary }, { status });
     }
 
     if (action === "simulate_publish") {
-      const simulation = await simulateCreatorDraftUpload(params.draftId);
+      const simulation = await withCreatorBusiness(session.businessId, () =>
+        simulateCreatorDraftUpload(params.draftId)
+      );
       return NextResponse.json({ ok: true, simulation });
     }
 
-    const result = await applyCreatorDraftAction(params.draftId, action as CreatorApprovalAction, {
-      source: "dashboard",
-      instruction: String(body?.instruction ?? "").trim() || undefined
-    });
+    const result = await withCreatorBusiness(session.businessId, () =>
+      applyCreatorDraftAction(params.draftId, action as CreatorApprovalAction, {
+        source: "dashboard",
+        instruction: String(body?.instruction ?? "").trim() || undefined
+      })
+    );
 
     console.info("[api.creator.draft-action] Action completed", {
       draftId: params.draftId,

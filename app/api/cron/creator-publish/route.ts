@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 
-import { processDueCreatorDrafts } from "@/lib/creator";
+import { listBusinesses } from "@/lib/business";
+import { processDueCreatorDraftsForBusiness } from "@/lib/creator";
 import { matchesHeaderSecret } from "@/lib/security";
 import { readSettings } from "@/lib/settings";
 
@@ -9,23 +10,42 @@ function readPresentedSecret(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
-  const settings = await readSettings();
-  const expectedSecret = settings.schedulerSecret.trim();
-  const presentedSecret = readPresentedSecret(request);
-
-  if (!expectedSecret) {
-    return NextResponse.json({ ok: false, reason: "Scheduler secret belum dikonfigurasi" }, { status: 503 });
+  const businesses = await listBusinesses();
+  if (businesses.length === 0) {
+    return NextResponse.json({ ok: false, reason: "Belum ada business yang terdaftar" }, { status: 503 });
   }
 
-  if (!matchesHeaderSecret(expectedSecret, presentedSecret)) {
+  const presentedSecret = readPresentedSecret(request);
+  let authorized = false;
+
+  for (const business of businesses) {
+    const settings = await readSettings(business.id);
+    const expected = settings.schedulerSecret.trim();
+    if (expected && matchesHeaderSecret(expected, presentedSecret)) {
+      authorized = true;
+      break;
+    }
+  }
+
+  if (!authorized) {
     return NextResponse.json({ ok: false, reason: "Invalid scheduler secret" }, { status: 401 });
   }
 
-  try {
-    const result = await processDueCreatorDrafts();
-    return NextResponse.json({ ok: true, result });
-  } catch (error) {
-    const reason = error instanceof Error ? error.message : "Unknown error";
-    return NextResponse.json({ ok: false, reason }, { status: 500 });
+  const results: Array<{ businessId: string; businessName: string; result: unknown; error?: string }> = [];
+
+  for (const business of businesses) {
+    try {
+      const result = await processDueCreatorDraftsForBusiness(business.id);
+      results.push({ businessId: business.id, businessName: business.name, result });
+    } catch (error) {
+      results.push({
+        businessId: business.id,
+        businessName: business.name,
+        result: null,
+        error: error instanceof Error ? error.message : "Unknown error"
+      });
+    }
   }
+
+  return NextResponse.json({ ok: true, results });
 }

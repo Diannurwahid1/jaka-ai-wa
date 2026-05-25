@@ -5,7 +5,7 @@ import { MemoryMessage, MemoryRole } from "@/types/memory";
 const SESSION_TTL_MS = 30 * 60 * 1000;
 const DEFAULT_LIMIT = 15;
 const SUMMARY_KEEP_RECENT = 6;
-const MAX_IDLE_SESSIONS = 1000;
+const MAX_IDLE_SESSIONS_PER_BUSINESS = 1000;
 
 function now() {
   return new Date();
@@ -19,11 +19,12 @@ function mapMemoryMessage(message: { role: string; content: string; createdAt: D
   };
 }
 
-async function ensureSession(phone: string) {
+async function ensureSession(businessId: string, phone: string) {
   return prisma.memorySession.upsert({
-    where: { phone },
+    where: { businessId_phone: { businessId, phone } },
     update: {},
     create: {
+      businessId,
       phone,
       summary: "",
       lastActive: now()
@@ -31,52 +32,59 @@ async function ensureSession(phone: string) {
   });
 }
 
-async function touchSession(phone: string) {
+async function touchSession(businessId: string, phone: string) {
   await prisma.memorySession.update({
-    where: { phone },
+    where: { businessId_phone: { businessId, phone } },
     data: { lastActive: now() }
   });
 }
 
-async function cullIdleSessions() {
-  const count = await prisma.memorySession.count();
+async function cullIdleSessions(businessId: string) {
+  const count = await prisma.memorySession.count({ where: { businessId } });
 
-  if (count <= MAX_IDLE_SESSIONS) {
+  if (count <= MAX_IDLE_SESSIONS_PER_BUSINESS) {
     return;
   }
 
   const sessionsToDelete = await prisma.memorySession.findMany({
+    where: { businessId },
     orderBy: { lastActive: "asc" },
-    skip: MAX_IDLE_SESSIONS,
+    skip: MAX_IDLE_SESSIONS_PER_BUSINESS,
     select: { phone: true }
   });
 
   if (sessionsToDelete.length > 0) {
     await prisma.memorySession.deleteMany({
-      where: { phone: { in: sessionsToDelete.map((session) => session.phone) } }
+      where: {
+        businessId,
+        phone: { in: sessionsToDelete.map((session) => session.phone) }
+      }
     });
   }
 }
 
-export async function getHistory(phone: string) {
-  await ensureSession(phone.trim());
+export async function getHistory(businessId: string, phone: string) {
+  const normalizedPhone = phone.trim();
+  await ensureSession(businessId, normalizedPhone);
   const messages = await prisma.memoryMessage.findMany({
-    where: { phone: phone.trim() },
+    where: { businessId, phone: normalizedPhone },
     orderBy: { createdAt: "asc" }
   });
 
   return messages.map(mapMemoryMessage);
 }
 
-export async function getSummary(phone: string) {
-  const session = await prisma.memorySession.findUnique({ where: { phone: phone.trim() } });
+export async function getSummary(businessId: string, phone: string) {
+  const session = await prisma.memorySession.findUnique({
+    where: { businessId_phone: { businessId, phone: phone.trim() } }
+  });
   return session?.summary ?? "";
 }
 
-export async function getMemorySnapshot(phone: string) {
+export async function getMemorySnapshot(businessId: string, phone: string) {
   const normalizedPhone = phone.trim();
-  const session = await ensureSession(normalizedPhone);
-  const messages = await getHistory(normalizedPhone);
+  const session = await ensureSession(businessId, normalizedPhone);
+  const messages = await getHistory(businessId, normalizedPhone);
 
   return {
     phone: session.phone,
@@ -86,8 +94,9 @@ export async function getMemorySnapshot(phone: string) {
   };
 }
 
-export async function listMemorySessions(limit = 100) {
+export async function listMemorySessions(businessId: string, limit = 100) {
   const sessions = await prisma.memorySession.findMany({
+    where: { businessId },
     orderBy: { lastActive: "desc" },
     take: limit,
     include: {
@@ -106,31 +115,34 @@ export async function listMemorySessions(limit = 100) {
   }));
 }
 
-export async function saveMessage(phone: string, role: MemoryRole, content: string) {
+export async function saveMessage(businessId: string, phone: string, role: MemoryRole, content: string) {
   const normalizedPhone = phone.trim();
-  await ensureSession(normalizedPhone);
+  await ensureSession(businessId, normalizedPhone);
 
   await prisma.memoryMessage.create({
     data: {
+      businessId,
       phone: normalizedPhone,
       role,
       content
     }
   });
 
-  await touchSession(normalizedPhone);
-  await compactMemory(normalizedPhone);
-  await cullIdleSessions();
+  await touchSession(businessId, normalizedPhone);
+  await compactMemory(businessId, normalizedPhone);
+  await cullIdleSessions(businessId);
 }
 
-export async function clearHistory(phone: string) {
-  await prisma.memorySession.deleteMany({ where: { phone: phone.trim() } });
+export async function clearHistory(businessId: string, phone: string) {
+  await prisma.memorySession.deleteMany({
+    where: { businessId, phone: phone.trim() }
+  });
 }
 
-export async function trimHistory(phone: string, limit = DEFAULT_LIMIT) {
+export async function trimHistory(businessId: string, phone: string, limit = DEFAULT_LIMIT) {
   const normalizedPhone = phone.trim();
   const messages = await prisma.memoryMessage.findMany({
-    where: { phone: normalizedPhone },
+    where: { businessId, phone: normalizedPhone },
     orderBy: { createdAt: "asc" }
   });
 
@@ -141,14 +153,16 @@ export async function trimHistory(phone: string, limit = DEFAULT_LIMIT) {
       where: { id: { in: toDelete } }
     });
 
-    await touchSession(normalizedPhone);
+    await touchSession(businessId, normalizedPhone);
   }
 
-  return getHistory(normalizedPhone);
+  return getHistory(businessId, normalizedPhone);
 }
 
-export async function isSessionExpired(phone: string) {
-  const session = await prisma.memorySession.findUnique({ where: { phone: phone.trim() } });
+export async function isSessionExpired(businessId: string, phone: string) {
+  const session = await prisma.memorySession.findUnique({
+    where: { businessId_phone: { businessId, phone: phone.trim() } }
+  });
 
   if (!session) {
     return false;
@@ -157,19 +171,19 @@ export async function isSessionExpired(phone: string) {
   return Date.now() - session.lastActive.getTime() > SESSION_TTL_MS;
 }
 
-export async function resetIfExpired(phone: string) {
-  if (await isSessionExpired(phone)) {
-    await clearHistory(phone);
+export async function resetIfExpired(businessId: string, phone: string) {
+  if (await isSessionExpired(businessId, phone)) {
+    await clearHistory(businessId, phone);
     return true;
   }
 
   return false;
 }
 
-export async function buildContextMessages(phone: string, systemPrompt: string) {
+export async function buildContextMessages(businessId: string, phone: string, systemPrompt: string) {
   const normalizedPhone = phone.trim();
-  const session = await ensureSession(normalizedPhone);
-  const history = await getHistory(normalizedPhone);
+  const session = await ensureSession(businessId, normalizedPhone);
+  const history = await getHistory(businessId, normalizedPhone);
   const messages: Array<{ role: "system" | MemoryRole; content: string }> = [
     { role: "system", content: systemPrompt }
   ];
@@ -191,10 +205,10 @@ export async function buildContextMessages(phone: string, systemPrompt: string) 
   return messages;
 }
 
-async function compactMemory(phone: string) {
-  const session = await ensureSession(phone);
+async function compactMemory(businessId: string, phone: string) {
+  const session = await ensureSession(businessId, phone);
   const messages = await prisma.memoryMessage.findMany({
-    where: { phone },
+    where: { businessId, phone },
     orderBy: { createdAt: "asc" }
   });
 
@@ -205,11 +219,11 @@ async function compactMemory(phone: string) {
   const overflowCount = Math.max(1, messages.length - SUMMARY_KEEP_RECENT);
   const toSummarize = messages.slice(0, overflowCount).map(mapMemoryMessage);
   const recentMessages = messages.slice(-SUMMARY_KEEP_RECENT);
-  const summary = await summarizeConversation(toSummarize, session.summary);
+  const summary = await summarizeConversation(businessId, toSummarize, session.summary);
 
   await prisma.$transaction([
     prisma.memorySession.update({
-      where: { phone },
+      where: { businessId_phone: { businessId, phone } },
       data: {
         summary,
         lastActive: now()
@@ -227,14 +241,15 @@ async function compactMemory(phone: string) {
   void recentMessages;
 }
 
-export async function seedHistory(phone: string, messages: MemoryMessage[]) {
+export async function seedHistory(businessId: string, phone: string, messages: MemoryMessage[]) {
   const normalizedPhone = phone.trim();
-  await clearHistory(normalizedPhone);
-  await ensureSession(normalizedPhone);
+  await clearHistory(businessId, normalizedPhone);
+  await ensureSession(businessId, normalizedPhone);
 
   if (messages.length > 0) {
     await prisma.memoryMessage.createMany({
       data: messages.map((message) => ({
+        businessId,
         phone: normalizedPhone,
         role: message.role,
         content: message.content,
@@ -243,5 +258,5 @@ export async function seedHistory(phone: string, messages: MemoryMessage[]) {
     });
   }
 
-  await touchSession(normalizedPhone);
+  await touchSession(businessId, normalizedPhone);
 }

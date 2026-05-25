@@ -1,9 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 
+import { requireSession } from "@/lib/auth";
 import { ingestKnowledge } from "@/lib/rag";
 
 export async function POST(request: NextRequest) {
   try {
+    const session = await requireSession();
     const body = await request.json();
     const title = String(body?.title ?? "").trim();
     const content = String(body?.content ?? "").trim();
@@ -13,7 +15,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ ok: false, reason: "title and content are required" }, { status: 400 });
     }
 
-    const knowledge = await ingestKnowledge({ title, content, category });
+    const knowledge = await ingestKnowledge(session.businessId, { title, content, category });
 
     return NextResponse.json({
       ok: true,

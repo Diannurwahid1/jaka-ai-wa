@@ -66,8 +66,8 @@ function formatR2Error(error: unknown) {
   return String(error || "Unknown error");
 }
 
-async function readR2Config(): Promise<R2Config> {
-  const settings = await readSettings();
+async function readR2Config(businessId: string): Promise<R2Config> {
+  const settings = await readSettings(businessId);
   const accessKeyId = settings.r2AccessKey.trim() || process.env.R2_ACCESS_KEY?.trim() || "";
   const secretAccessKey = settings.r2SecretKey.trim() || process.env.R2_SECRET_KEY?.trim() || "";
   const bucket = settings.r2Bucket.trim() || process.env.R2_BUCKET?.trim() || "";
@@ -263,8 +263,8 @@ async function optimizeImageIfNeeded(image: DownloadedImage): Promise<Downloaded
   }
 }
 
-export async function uploadBufferToR2(image: DownloadedImage): Promise<StoredImageResult> {
-  const config = await readR2Config();
+export async function uploadBufferToR2(businessId: string, image: DownloadedImage): Promise<StoredImageResult> {
+  const config = await readR2Config(businessId);
   const client = getR2Client(config);
   const optimized = await optimizeImageIfNeeded(image);
   const key = buildR2ObjectKey(optimized.extension);
@@ -290,13 +290,13 @@ export async function uploadBufferToR2(image: DownloadedImage): Promise<StoredIm
   };
 }
 
-export async function persistGeneratedImageToR2(source: string) {
+export async function persistGeneratedImageToR2(businessId: string, source: string) {
   const downloadedImage = await downloadGeneratedImage(source);
-  return uploadBufferToR2(downloadedImage);
+  return uploadBufferToR2(businessId, downloadedImage);
 }
 
-export async function testR2Connection(): Promise<R2ConnectionResult> {
-  const config = await readR2Config();
+export async function testR2Connection(businessId: string): Promise<R2ConnectionResult> {
+  const config = await readR2Config(businessId);
   const client = getR2Client(config);
   const key = `healthchecks/${new Date().toISOString().slice(0, 10)}/${Date.now()}-${randomUUID()}.txt`;
   const publicObjectUrl = buildPublicObjectUrl(config.publicUrl, key);

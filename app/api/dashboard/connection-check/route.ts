@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 
 import { testAIConnection } from "@/lib/ai";
+import { requireSession } from "@/lib/auth";
 import { testEmbeddingConnection } from "@/lib/rag";
 import { readSettings } from "@/lib/settings";
 import { testLinkedInConnection, testMetaConnection, testThreadsConnection } from "@/lib/social";
@@ -15,7 +16,7 @@ const connectionMeta: Record<
     label: string;
     affectedSettings: string[];
     validate: (settings: Awaited<ReturnType<typeof readSettings>>) => string[];
-    run: () => Promise<{ summary: string }>;
+    run: (businessId: string) => Promise<{ summary: string }>;
   }
 > = {
   ai: {
@@ -28,7 +29,7 @@ const connectionMeta: Record<
       if (!settings.aiModel.trim()) missing.push("Model");
       return missing;
     },
-    run: testAIConnection
+    run: (businessId) => testAIConnection(businessId)
   },
   wa: {
     label: "WA Blast",
@@ -40,7 +41,7 @@ const connectionMeta: Record<
       if (!settings.waToken.trim()) missing.push("WA Token");
       return missing;
     },
-    run: testWAConnection
+    run: (businessId) => testWAConnection(businessId)
   },
   embedding: {
     label: "MongoDB / Embedding",
@@ -69,8 +70,8 @@ const connectionMeta: Record<
       }
       return missing;
     },
-    run: async () => {
-      const result = await testEmbeddingConnection();
+    run: async (businessId) => {
+      const result = await testEmbeddingConnection(businessId);
       return {
         summary: `${result.provider} / ${result.model} OK (${result.vectorLength} dimensi).`
       };
@@ -89,8 +90,8 @@ const connectionMeta: Record<
       if (!settings.metaPageAccessToken.trim()) missing.push("Page Access Token");
       return missing;
     },
-    run: async () => {
-      const result = await testMetaConnection();
+    run: async (businessId) => {
+      const result = await testMetaConnection(businessId);
       return { summary: result.summary };
     }
   },
@@ -102,8 +103,8 @@ const connectionMeta: Record<
       if (!settings.threadsAccessToken.trim()) missing.push("Threads Access Token");
       return missing;
     },
-    run: async () => {
-      const result = await testThreadsConnection();
+    run: async (businessId) => {
+      const result = await testThreadsConnection(businessId);
       return { summary: result.summary };
     }
   },
@@ -121,14 +122,15 @@ const connectionMeta: Record<
       }
       return missing;
     },
-    run: async () => {
-      const result = await testLinkedInConnection();
+    run: async (businessId) => {
+      const result = await testLinkedInConnection(businessId);
       return { summary: result.summary };
     }
   }
 };
 
 export async function POST(request: NextRequest) {
+  const session = await requireSession();
   const body = (await request.json().catch(() => ({}))) as { key?: string };
   const key = String(body?.key ?? "").trim() as ConnectionKey;
 
@@ -137,7 +139,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ ok: false, reason: "Unknown connection key" }, { status: 400 });
     }
 
-    const settings = await readSettings();
+    const settings = await readSettings(session.businessId);
     const meta = connectionMeta[key];
     const missingFields = meta.validate(settings);
 
@@ -154,7 +156,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ ok: true, check: payload });
     }
 
-    const result = await meta.run();
+    const result = await meta.run(session.businessId);
     const payload: DashboardConnectionCheck = {
       key,
       label: meta.label,

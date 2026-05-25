@@ -1,11 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 
 import { askAI } from "@/lib/ai";
+import { requireSession } from "@/lib/auth";
 import { createMessage, updateMessage } from "@/lib/store";
 import { detectIntent } from "@/lib/utils";
 
 export async function POST(request: NextRequest) {
   try {
+    const session = await requireSession();
     const body = await request.json();
     const message = String(body?.message ?? "").trim();
     const from = String(body?.from ?? "manual-chat").trim();
@@ -14,7 +16,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ ok: false, reason: "Message is required" }, { status: 400 });
     }
 
-    const log = await createMessage({
+    const log = await createMessage(session.businessId, {
       from,
       message,
       reply: "",
@@ -24,12 +26,12 @@ export async function POST(request: NextRequest) {
     });
 
     try {
-      const reply = await askAI(message, {
+      const reply = await askAI(session.businessId, message, {
         phone: from,
         remember: true
       });
 
-      await updateMessage(log.id, {
+      await updateMessage(session.businessId, log.id, {
         reply,
         status: "success"
       });
@@ -38,7 +40,7 @@ export async function POST(request: NextRequest) {
     } catch (error) {
       const reason = error instanceof Error ? error.message : "Unknown error";
 
-      await updateMessage(log.id, {
+      await updateMessage(session.businessId, log.id, {
         status: "failed",
         error: reason
       });

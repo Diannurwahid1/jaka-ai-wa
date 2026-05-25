@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 
-import { approveAllCreatorDrafts } from "@/lib/creator";
+import { requireSession } from "@/lib/auth";
+import { approveAllCreatorDrafts, withCreatorBusiness } from "@/lib/creator";
 import { CreatorPlatform } from "@/types/creator";
 
 function normalizePlatform(value: unknown): CreatorPlatform | null {
@@ -12,6 +13,7 @@ function normalizePlatform(value: unknown): CreatorPlatform | null {
 
 export async function POST(request: NextRequest) {
   try {
+    const session = await requireSession();
     const body = await request.json();
     const action = String(body?.action ?? "").trim().toLowerCase();
     const platform = normalizePlatform(body?.platform);
@@ -24,7 +26,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ ok: false, reason: "Unsupported bulk draft action" }, { status: 400 });
     }
 
-    const result = await approveAllCreatorDrafts(platform);
+    const result = await withCreatorBusiness(session.businessId, () => approveAllCreatorDrafts(platform));
     return NextResponse.json({ ok: true, result });
   } catch (error) {
     const reason = error instanceof Error ? error.message : "Unknown error";

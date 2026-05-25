@@ -7,6 +7,7 @@ import {
   CreatorPublishSimulation
 } from "@/types/creator";
 
+import { currentBusinessId, runInBusinessContext } from "@/lib/business-context";
 import { readSettings, writeSettings } from "@/lib/settings";
 
 type SocialConnectionResult = {
@@ -382,7 +383,7 @@ async function resolveMetaConfig(settings: AppSettings, platform: "facebook" | "
     const nextSettings = await writeSettings({
       metaPageAccessToken: resolvedPage.pageAccessToken,
       ...(resolvedPage.pageName ? { metaFacebookPageName: resolvedPage.pageName } : {})
-    });
+    }, currentBusinessId());
     
     config.pageAccessToken = nextSettings.metaPageAccessToken.trim();
     config.targetLabel = nextSettings.metaFacebookPageName.trim() || config.targetLabel;
@@ -464,7 +465,8 @@ function getThreadsMediaType(draft: CreatorDraft, index: number) {
 }
 
 async function refreshLinkedInAccessTokenIfNeeded() {
-  const settings = await readSettings();
+  const businessId = currentBusinessId();
+  const settings = await readSettings(businessId);
   const refreshToken = settings.linkedinRefreshToken.trim();
   const expiresAt = settings.linkedinTokenExpiresAt.trim();
 
@@ -509,7 +511,7 @@ async function refreshLinkedInAccessTokenIfNeeded() {
     linkedinAccessToken: String(tokenData.access_token ?? "").trim() || settings.linkedinAccessToken,
     linkedinRefreshToken: String(tokenData.refresh_token ?? "").trim() || settings.linkedinRefreshToken,
     linkedinTokenExpiresAt: toIsoExpiry(Number(tokenData.expires_in ?? 0)) || settings.linkedinTokenExpiresAt
-  });
+  }, businessId);
 
   return nextSettings;
 }
@@ -621,8 +623,8 @@ function buildPublishSimulationResult(
   };
 }
 
-export async function getLinkedInAuthorizationUrl() {
-  const settings = await readSettings();
+export async function getLinkedInAuthorizationUrl(businessId: string) {
+  const settings = await readSettings(businessId);
 
   if (!settings.linkedinClientId.trim() || !settings.linkedinRedirectUri.trim()) {
     throw new Error("LinkedIn Client ID dan Redirect URI wajib diisi di root Settings.");
@@ -638,8 +640,8 @@ export async function getLinkedInAuthorizationUrl() {
   return url.toString();
 }
 
-export async function exchangeLinkedInAuthorizationCode(code: string) {
-  const settings = await readSettings();
+export async function exchangeLinkedInAuthorizationCode(businessId: string, code: string) {
+  const settings = await readSettings(businessId);
 
   if (!settings.linkedinClientId.trim() || !settings.linkedinClientSecret.trim() || !settings.linkedinRedirectUri.trim()) {
     throw new Error("LinkedIn OAuth config belum lengkap di root Settings.");
@@ -688,13 +690,14 @@ export async function exchangeLinkedInAuthorizationCode(code: string) {
     linkedinRefreshToken: String(tokenData.refresh_token ?? "").trim(),
     linkedinTokenExpiresAt: toIsoExpiry(Number(tokenData.expires_in ?? 0)),
     linkedinAuthorUrn
-  });
+  }, businessId);
 
   return nextSettings;
 }
 
-export async function testMetaConnection(): Promise<SocialConnectionResult> {
-  const settings = await readSettings();
+export async function testMetaConnection(businessId: string): Promise<SocialConnectionResult> {
+  return runInBusinessContext(businessId, async () => {
+  const settings = await readSettings(businessId);
   const config = await resolveMetaConfig(settings, "facebook");
   const pageInfo = await getGraphWithToken(config.actorId, "id,name,category", settings, config.pageAccessToken);
 
@@ -721,9 +724,11 @@ export async function testMetaConnection(): Promise<SocialConnectionResult> {
       instagramUsername: instagramInfo?.username ?? ""
     }
   };
+  });
 }
 
-export async function testLinkedInConnection(): Promise<SocialConnectionResult> {
+export async function testLinkedInConnection(businessId: string): Promise<SocialConnectionResult> {
+  return runInBusinessContext(businessId, async () => {
   const linkedInSettings = await refreshLinkedInAccessTokenIfNeeded();
   const config = ensureLinkedInConfig(linkedInSettings);
   const profile = await fetchLinkedInUserInfo(config.accessToken);
@@ -741,10 +746,11 @@ export async function testLinkedInConnection(): Promise<SocialConnectionResult> 
       accessToken: redactToken(config.accessToken)
     }
   };
+  });
 }
 
-export async function testThreadsConnection(): Promise<SocialConnectionResult> {
-  const settings = await readSettings();
+export async function testThreadsConnection(businessId: string): Promise<SocialConnectionResult> {
+  const settings = await readSettings(businessId);
   const config = ensureThreadsConfig(settings);
   const params = new URLSearchParams({
     fields: "id,username",
@@ -763,8 +769,9 @@ export async function testThreadsConnection(): Promise<SocialConnectionResult> {
   };
 }
 
-export async function simulatePlatformPublish(draft: CreatorDraft): Promise<CreatorPublishSimulation> {
-  const settings = await readSettings();
+export async function simulatePlatformPublish(businessId: string, draft: CreatorDraft): Promise<CreatorPublishSimulation> {
+  return runInBusinessContext(businessId, async () => {
+  const settings = await readSettings(businessId);
   const text = buildDraftText(draft);
   const imageUrl = getPersistentImageUrl(draft, settings.r2PublicUrl);
 
@@ -904,16 +911,19 @@ export async function simulatePlatformPublish(draft: CreatorDraft): Promise<Crea
       error instanceof Error ? error.message : "LinkedIn simulation failed."
     );
   }
+  });
 }
 
 export async function publishDraftToPlatform(
+  businessId: string,
   draft: CreatorDraft,
   options?: {
     appBaseUrl?: string;
   }
 ): Promise<PublishExecutionResult> {
+  return runInBusinessContext(businessId, async () => {
   const text = buildDraftText(draft);
-  const settings = await readSettings();
+  const settings = await readSettings(businessId);
   const imageUrl = getPersistentImageUrl(draft, settings.r2PublicUrl);
 
   if (draft.platform === "threads") {
@@ -1168,4 +1178,5 @@ export async function publishDraftToPlatform(
       commentary: clipText(text, 160)
     }
   };
+  });
 }

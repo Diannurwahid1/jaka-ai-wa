@@ -1,6 +1,8 @@
 import { ObjectId } from "mongodb";
 
 import { postChatCompletion } from "@/lib/ai-client";
+import { currentBusinessId, runInBusinessContext } from "@/lib/business-context";
+import { getBusinessProfileById } from "@/lib/business";
 import { generateBytePlusImage, hasBytePlusImageConfig } from "@/lib/byteplus";
 import { getMongoDatabase } from "@/lib/mongodb";
 import { persistGeneratedImageToR2 } from "@/lib/r2";
@@ -29,7 +31,11 @@ import {
   ThreadPartType
 } from "@/types/creator";
 
-const CREATOR_ID = "jaka-ai-creator";
+// getCreatorId() is the businessId of the active tenant (resolved from async-local context).
+// Each business has its own creator profiles, drafts, knowledge, and topic briefs in MongoDB.
+function getCreatorId() {
+  return currentBusinessId();
+}
 const CREATOR_DRAFT_GENERATION_DISABLED_REASON = "Jaka Creator sedang dinonaktifkan untuk pembuatan draft.";
 const CREATOR_TOPIC_GENERATION_DISABLED_REASON = "Jaka Creator sedang dinonaktifkan untuk pembuatan topik.";
 const creatorCollectionNames = {
@@ -45,7 +51,7 @@ const platformOrder: CreatorPlatform[] = ["threads", "instagram", "linkedin", "f
 const publishRetryDelayMinutes = [5, 15, 60] as const;
 
 async function assertCreatorGenerationEnabled(kind: "draft" | "topic") {
-  const settings = await readSettings();
+  const settings = await readSettings(getCreatorId());
 
   if (settings.creatorGenerationEnabled) {
     return;
@@ -239,7 +245,7 @@ type PlatformMeta = {
 const platformMeta: Record<CreatorPlatform, PlatformMeta> = {
   threads: {
     label: "Threads",
-    description: "Thread bisnis hospitality yang tajam, relevan, dan mengarahkan owner ke solusi direct booking serta pertumbuhan revenue.",
+    description: "Thread bisnis yang tajam, relevan, dan mengarahkan audience ke solusi serta pertumbuhan bisnis.",
     defaultType: "thread_series",
     requiresImage: false,
     defaultAspectRatio: "1:1",
@@ -254,15 +260,15 @@ const platformMeta: Record<CreatorPlatform, PlatformMeta> = {
       { label: "Sore", time: "16:30" }
     ],
     generationRules: [
-      "Buat thread 4 sampai 5 post dengan hook keras di post pertama dan alur reply yang tetap mudah dibaca owner bisnis.",
-      "Fokus pada problem bisnis dan solusi praktis: direct booking, ketergantungan OTA, lead hilang dari WhatsApp, website yang tidak konversi, dan follow-up customer yang lambat.",
-      "Jangan bahas teknis coding, stack, atau jargon developer. Sudut pandang wajib seperti owner atau strategist bisnis hospitality.",
-      "Setiap thread harus memberi insight yang terasa mahal, spesifik ke hotel, villa, resort, atau penginapan."
+      "Buat thread 4 sampai 5 post dengan hook keras di post pertama dan alur reply yang tetap mudah dibaca target audience.",
+      "Fokus pada problem bisnis dan solusi praktis yang relevan dengan niche dan audience brand.",
+      "Jangan bahas teknis coding, stack, atau jargon developer. Sudut pandang wajib seperti owner atau strategist bisnis.",
+      "Setiap thread harus memberi insight yang terasa mahal dan spesifik ke industri brand."
     ]
   },
   instagram: {
     label: "Instagram",
-    description: "Post visual premium untuk hotel dan hospitality brand yang ingin menaikkan direct booking dan awareness.",
+    description: "Post visual premium untuk brand yang ingin menaikkan engagement dan awareness.",
     defaultType: "single_post",
     requiresImage: true,
     defaultAspectRatio: "4:5",
@@ -277,15 +283,15 @@ const platformMeta: Record<CreatorPlatform, PlatformMeta> = {
       { label: "Sore", time: "17:00" }
     ],
     generationRules: [
-      "Caption harus punya hook di baris pertama dan langsung menyorot problem bisnis hospitality yang nyata.",
-      "Fokus pada solusi owner-level: direct booking, ketergantungan OTA, lead WhatsApp hilang, website hotel yang tidak konversi, dan respon tamu yang lambat.",
-      "Jangan bahas teknis coding, stack, atau jargon developer. Visual wajib premium, estetik, dan terasa seperti brand hospitality-tech yang serius.",
+      "Caption harus punya hook di baris pertama dan langsung menyorot problem yang nyata bagi target audience.",
+      "Fokus pada solusi yang relevan dengan niche brand dan kebutuhan audience.",
+      "Jangan bahas teknis coding, stack, atau jargon developer. Visual wajib premium, estetik, dan konsisten dengan brand identity.",
       "Buat CTA ringan dan maksimal 5 hashtag relevan jika memang perlu."
     ]
   },
   linkedin: {
     label: "LinkedIn",
-    description: "Post authority-building untuk owner dan decision maker hospitality dengan sudut pandang bisnis.",
+    description: "Post authority-building untuk owner dan decision maker dengan sudut pandang bisnis.",
     defaultType: "single_post",
     requiresImage: true,
     defaultAspectRatio: "16:9",
@@ -301,14 +307,14 @@ const platformMeta: Record<CreatorPlatform, PlatformMeta> = {
     ],
     generationRules: [
       "Opening 1-2 kalimat pertama harus menarik namun tetap profesional dan business-first.",
-      "Isi harus membangun authority lewat insight strategis hospitality: direct booking, margin, guest journey, AI customer service, dan operational efficiency.",
-      "Jangan bahas teknis coding, stack, atau implementasi developer. Sudut pandang wajib seperti owner, operator, atau strategist bisnis hospitality.",
-      "Visual wajib relevan dengan tema profesional, workspace, leadership, atau hospitality operations."
+      "Isi harus membangun authority lewat insight strategis yang relevan dengan niche dan audience brand.",
+      "Jangan bahas teknis coding, stack, atau implementasi developer. Sudut pandang wajib seperti owner, operator, atau strategist bisnis.",
+      "Visual wajib relevan dengan tema profesional, workspace, leadership, atau operasional bisnis."
     ]
   },
   facebook: {
     label: "Facebook",
-    description: "Post komunitas hospitality yang ramah, relatable, dan tetap mendorong diskusi soal bisnis hotel.",
+    description: "Post komunitas yang ramah, relatable, dan tetap mendorong diskusi soal bisnis.",
     defaultType: "single_post",
     requiresImage: true,
     defaultAspectRatio: "1:1",
@@ -323,8 +329,8 @@ const platformMeta: Record<CreatorPlatform, PlatformMeta> = {
       { label: "Malam", time: "18:30" }
     ],
     generationRules: [
-      "Buka dengan angle yang relatable atau memancing diskusi tentang problem bisnis hotel yang sering terjadi.",
-      "Caption harus lebih luwes dan human dibanding LinkedIn, tapi tetap fokus ke solusi direct booking, pelayanan tamu, dan revenue.",
+      "Buka dengan angle yang relatable atau memancing diskusi tentang problem yang sering dialami target audience.",
+      "Caption harus lebih luwes dan human dibanding LinkedIn, tapi tetap fokus ke solusi yang relevan dengan niche brand.",
       "Jangan bahas teknis coding atau stack developer. Visual perlu kuat untuk shareability, stop-scroll, dan mudah dipahami cepat."
     ]
   }
@@ -418,7 +424,7 @@ async function notifyApprovalPhoneOnPublishSuccess(document: CreatorDraftDocumen
   ].filter(Boolean);
 
   try {
-    await sendWA(approvalTarget, lines.join("\n"), {
+    await sendWA(getCreatorId(), approvalTarget, lines.join("\n"), {
       timeoutMs: 120000
     });
   } catch (error) {
@@ -449,23 +455,24 @@ function getPlatformMeta(platform: CreatorPlatform) {
   return platformMeta[platform];
 }
 
-function defaultProfileValues(platform: CreatorPlatform): Omit<CreatorProfileDocument, "_id" | "createdAt" | "updatedAt"> {
+async function defaultProfileValues(platform: CreatorPlatform): Promise<Omit<CreatorProfileDocument, "_id" | "createdAt" | "updatedAt">> {
   const meta = getPlatformMeta(platform);
-  const citraName = "Citra Digital Hotel";
-  const citraNiche = "Direct booking hotel, website hotel yang konversi, AI customer service, dan digital marketing hospitality";
-  const citraBrandSummary =
-    "Citra Digital Hotel membantu hotel, villa, resort, dan penginapan meningkatkan direct booking lewat website yang fokus konversi, AI customer service, serta strategi digital yang praktis dan terukur.";
-  const citraAudience =
-    "Owner hotel, villa, resort, penginapan, dan tim marketing hospitality yang ingin menaikkan direct booking, mengurangi ketergantungan OTA, dan mempercepat closing dari WhatsApp atau website.";
+
+  // Fetch business profile to use as defaults instead of hardcoded values
+  const businessProfile = await getBusinessProfileById(getCreatorId());
+  const businessName = businessProfile?.name || "Brand Anda";
+  const businessNiche = businessProfile?.niche || "";
+  const businessBrandSummary = businessProfile?.brandSummary || "";
+  const businessAudience = businessProfile?.audience || "";
 
   if (platform === "threads") {
     return {
-      creatorId: CREATOR_ID,
+      creatorId: getCreatorId(),
       platform,
-      name: citraName,
-      niche: citraNiche,
-      brandSummary: citraBrandSummary,
-      audience: citraAudience,
+      name: businessName,
+      niche: businessNiche,
+      brandSummary: businessBrandSummary,
+      audience: businessAudience,
       objective: "authority",
       approvalPhone: "",
       defaultRole: "owner",
@@ -482,12 +489,12 @@ function defaultProfileValues(platform: CreatorPlatform): Omit<CreatorProfileDoc
   }
 
   return {
-    creatorId: CREATOR_ID,
+    creatorId: getCreatorId(),
     platform,
-    name: citraName,
-    niche: citraNiche,
-    brandSummary: citraBrandSummary,
-    audience: citraAudience,
+    name: businessName,
+    niche: businessNiche,
+    brandSummary: businessBrandSummary,
+    audience: businessAudience,
     objective: platform === "linkedin" ? "authority" : "engagement",
     approvalPhone: "",
     defaultRole: "owner",
@@ -504,19 +511,23 @@ function defaultProfileValues(platform: CreatorPlatform): Omit<CreatorProfileDoc
 }
 
 function shouldUpgradeLegacyProfile(document: CreatorProfileDocument) {
+  // Only upgrade for structural/technical issues, NOT content
   return (
     typeof document.autoGenerateDrafts !== "boolean" ||
     !Array.isArray(document.draftScheduleSlots) ||
-    document.draftScheduleSlots.length === 0 ||
-    (
-      document.name.trim() === "Jaka AI Creator" ||
-      document.niche.trim() === "AI automation, productivity, social media growth" ||
-      document.brandSummary.includes("Jaka AI Creator adalah modul pembuat konten") ||
-      document.audience.includes("creator yang ingin produksi konten lebih cepat") ||
-      (document.platform === "threads" && document.defaultRole !== "owner") ||
-      (document.platform === "linkedin" && document.defaultRole === "personal-branding") ||
-      ((document.platform === "instagram" || document.platform === "facebook") && document.defaultRole === "informative")
-    )
+    document.draftScheduleSlots.length === 0
+  );
+}
+
+function hasLegacyContentDefaults(document: CreatorProfileDocument) {
+  // Detect if the profile still has old hardcoded content that should be refreshed
+  return (
+    document.name.trim() === "Jaka AI Creator" ||
+    document.name.trim() === "Citra Digital Hotel" ||
+    document.niche.trim() === "AI automation, productivity, social media growth" ||
+    document.brandSummary.includes("Jaka AI Creator adalah modul pembuat konten") ||
+    document.audience.includes("creator yang ingin produksi konten lebih cepat") ||
+    document.brandSummary.includes("Citra Digital Hotel membantu hotel, villa, resort")
   );
 }
 
@@ -749,7 +760,7 @@ function buildTopicScoutQuery(platform: CreatorPlatform, profile: CreatorProfile
   }
 
   const platformLabel = getPlatformMeta(platform).label.toLowerCase();
-  return `${profile.name} ${profile.niche} tren terbaru hotel indonesia direct booking OTA hospitality marketing AI customer service ${platformLabel}`;
+  return `${profile.name} ${profile.niche} tren terbaru ${platformLabel}`;
 }
 
 function buildTopicScoutPrompt(input: {
@@ -765,18 +776,19 @@ function buildTopicScoutPrompt(input: {
     .join("\n");
 
   return `
-Kamu adalah Brief Strategist untuk konten hospitality brand.
+Kamu adalah Brief Strategist untuk konten brand.
 
 Brand:
 - Name: ${input.profile.name}
+- Niche: ${input.profile.niche}
 - Brand summary: ${input.profile.brandSummary}
 - Audience: ${input.profile.audience}
 - Platform target: ${getPlatformMeta(input.platform).label}
 
 Task:
 - Dari hasil web search di bawah, buat ${input.limit} brief topik konten yang paling relevan, segar, dan non-teknis.
-- Fokus pada owner hotel, villa, resort, penginapan, dan marketing hospitality.
-- Prioritaskan topik tentang direct booking, OTA, okupansi, website konversi, AI customer service, WhatsApp lead, guest experience, dan revenue.
+- Fokus pada target audience brand dan topik yang sesuai niche.
+- Prioritaskan topik yang relevan dengan kebutuhan dan problem audience.
 - Jangan buat topik duplikat satu sama lain.
 - Jangan bahas coding, stack, atau teknis implementasi developer.
 - Judul topic harus singkat dan siap dipakai generator draft.
@@ -792,7 +804,7 @@ Return JSON:
       "angle": "sudut bahasan utama",
       "description": "brief konten 1-2 kalimat",
       "whyNow": "kenapa ini relevan sekarang",
-      "tags": ["hotel", "direct-booking"],
+      "tags": ["tag1", "tag2"],
       "references": [
         {
           "title": "judul sumber",
@@ -988,14 +1000,14 @@ function deriveVisualHeadline(topic: string, caption: string) {
     return primary;
   }
 
-  return compactWords(caption, 6, "Direct Booking Naik");
+  return compactWords(caption, 6, "Grow Your Business");
 }
 
 function deriveVisualSubline(platform: CreatorPlatform, topic: string) {
   const fallbackMap: Record<Exclude<CreatorPlatform, "threads">, string> = {
-    instagram: "Website hotel yang jualan, bukan sekadar tampil bagus",
-    facebook: "Solusi digital hospitality yang langsung terasa dampaknya",
-    linkedin: "Hospitality growth system yang lebih modern dan terukur"
+    instagram: "Solusi yang bekerja, bukan sekadar tampil bagus",
+    facebook: "Solusi digital yang langsung terasa dampaknya",
+    linkedin: "Growth system yang lebih modern dan terukur"
   };
 
   const normalizedTopic = topic.toLowerCase();
@@ -1005,22 +1017,22 @@ function deriveVisualSubline(platform: CreatorPlatform, topic: string) {
   }
 
   if (normalizedTopic.includes("booking")) {
-    return "Bikin tamu booking tanpa ribet";
+    return "Bikin customer booking tanpa ribet";
   }
 
   if (normalizedTopic.includes("ai")) {
-    return "Respon tamu lebih cepat dan rapi";
+    return "Respon customer lebih cepat dan rapi";
   }
 
   if (normalizedTopic.includes("website")) {
-    return "Website hotel yang bantu closing";
+    return "Website yang bantu closing";
   }
 
   if (normalizedTopic.includes("whatsapp")) {
-    return "Follow up tamu lebih cepat";
+    return "Follow up customer lebih cepat";
   }
 
-  return fallbackMap[platform as Exclude<CreatorPlatform, "threads">] || "Solusi hospitality premium";
+  return fallbackMap[platform as Exclude<CreatorPlatform, "threads">] || "Solusi bisnis premium";
 }
 
 function deriveVisualCta(platform: CreatorPlatform) {
@@ -1033,22 +1045,39 @@ function deriveVisualCta(platform: CreatorPlatform) {
   return defaultMap[platform as Exclude<CreatorPlatform, "threads">] || "Lihat Demo";
 }
 
-function getBrandVisualCore(platform: CreatorPlatform) {
-  const commonCore = [
-    "Brand: Citra Digital Hotel.",
-    "Theme: premium hospitality tech, modern, terpercaya, AI-driven, enterprise trust.",
-    "Color direction: deep dark navy, electric blue, and crisp white accents.",
-    "Use a premium futuristic visual language with subtle grid, glow lines, glassmorphism, restrained dashboard UI accents, and clean composition.",
-    "Subject must be a real human, photorealistic, not illustration, not cartoon, not 3D render.",
-    "Subject should relate to hotel operations, hotel owner, front office, hospitality staff, guest journey, or manager with laptop/tablet/phone.",
-    "Add a large short headline inside the image, concise and bold.",
-    "Add a smaller supporting subline and a small CTA pill/button.",
-    "The text inside image must feel like a campaign headline, not a paragraph.",
-    "Do not render any logo, watermark, brand wordmark, company name, app name, or signature in the image.",
-    "Brand identity must come from color, styling, composition, mood, and subject direction, not from placing logos or company names on the artwork.",
-    "Do not render color codes, hex values, debug labels, random symbols, fake UI annotations, or decorative code-like text anywhere in the image.",
-    "Avoid red dominant colors, avoid playful retail style, avoid noisy promo poster style, avoid clutter."
-  ];
+async function getBrandVisualCore(platform: CreatorPlatform) {
+  const businessProfile = await getBusinessProfileById(getCreatorId());
+  const brandName = businessProfile?.name || "Brand";
+  const brandVisualStyle = businessProfile?.brandVisualStyle?.trim() || "";
+
+  // If business has custom visual style, use it
+  const commonCore = brandVisualStyle
+    ? [
+        `Brand: ${brandName}.`,
+        brandVisualStyle,
+        "Subject must be a real human, photorealistic, not illustration, not cartoon, not 3D render.",
+        "Add a large short headline inside the image, concise and bold.",
+        "Add a smaller supporting subline and a small CTA pill/button.",
+        "The text inside image must feel like a campaign headline, not a paragraph.",
+        "Do not render any logo, watermark, brand wordmark, company name, app name, or signature in the image.",
+        "Brand identity must come from color, styling, composition, mood, and subject direction, not from placing logos or company names on the artwork.",
+        "Do not render color codes, hex values, debug labels, random symbols, fake UI annotations, or decorative code-like text anywhere in the image."
+      ]
+    : [
+        `Brand: ${brandName}.`,
+        "Theme: premium, modern, terpercaya, professional.",
+        "Color direction: use brand-appropriate colors with clean contrast.",
+        "Use a premium modern visual language with clean composition.",
+        "Subject must be a real human, photorealistic, not illustration, not cartoon, not 3D render.",
+        "Subject should relate to the brand's industry and target audience.",
+        "Add a large short headline inside the image, concise and bold.",
+        "Add a smaller supporting subline and a small CTA pill/button.",
+        "The text inside image must feel like a campaign headline, not a paragraph.",
+        "Do not render any logo, watermark, brand wordmark, company name, app name, or signature in the image.",
+        "Brand identity must come from color, styling, composition, mood, and subject direction, not from placing logos or company names on the artwork.",
+        "Do not render color codes, hex values, debug labels, random symbols, fake UI annotations, or decorative code-like text anywhere in the image.",
+        "Avoid clutter and noisy promo poster style."
+      ];
 
   const adapterMap: Record<Exclude<CreatorPlatform, "threads">, string[]> = {
     instagram: [
@@ -1064,14 +1093,14 @@ function getBrandVisualCore(platform: CreatorPlatform) {
     linkedin: [
       "LinkedIn adapter: more executive, professional, strategic, polished, and authority-driven.",
       "Use cleaner composition, more subtle effects, and business-oriented body language.",
-      "Scene should feel credible for decision makers in hospitality."
+      "Scene should feel credible for decision makers."
     ]
   };
 
   return [...commonCore, ...adapterMap[platform as Exclude<CreatorPlatform, "threads">]];
 }
 
-function composeBrandedVisualPrompt(
+async function composeBrandedVisualPrompt(
   platform: CreatorPlatform,
   profile: CreatorProfile,
   draft: {
@@ -1089,14 +1118,14 @@ function composeBrandedVisualPrompt(
   const cta = compactWords(concept?.visualCta ?? "", 4, deriveVisualCta(platform));
   const scene =
     concept?.visualScene?.trim() ||
-    `real human subject in premium hotel or hospitality workspace context, using laptop, tablet, or smartphone with hotel-tech workflow`;
+    `real human subject in professional workspace context, using laptop, tablet, or smartphone`;
   const layout =
     concept?.visualLayout?.trim() ||
     `clean campaign layout with strong hierarchy, subject on one side, bold headline block, subline beneath, CTA pill, subtle UI overlays`;
   const mood =
     concept?.visualMood?.trim() ||
     `premium, futuristic, trustworthy, modern, calm, intelligent`;
-  const brandCore = getBrandVisualCore(platform).join(" ");
+  const brandCore = (await getBrandVisualCore(platform)).join(" ");
 
   return [
     brandCore,
@@ -1127,8 +1156,8 @@ function aspectRatioToImageSize(aspectRatio: CreatorAspectRatio) {
   return "2048x2048";
 }
 
-function sanitizeProfileInput(platform: CreatorPlatform, input: Partial<CreatorProfile>) {
-  const defaults = defaultProfileValues(platform);
+async function sanitizeProfileInput(platform: CreatorPlatform, input: Partial<CreatorProfile>) {
+  const defaults = await defaultProfileValues(platform);
   const postsPerDay = Number(input.postsPerDay ?? defaults.postsPerDay);
   const planningDays = Number(input.planningDays ?? defaults.planningDays);
   const generateImages = platform === "threads" ? false : Boolean(input.generateImages ?? defaults.generateImages);
@@ -1184,7 +1213,7 @@ function sanitizeKnowledgeInput(platform: CreatorPlatform, input: Partial<Creato
 }
 
 async function getCollections() {
-  const db = await getMongoDatabase();
+  const db = await getMongoDatabase(getCreatorId());
   return {
     profiles: db.collection<CreatorProfileDocument>(creatorCollectionNames.profiles),
     knowledge: db.collection<CreatorKnowledgeDocument>(creatorCollectionNames.knowledge),
@@ -1331,19 +1360,15 @@ function mapTopicBrief(document: CreatorTopicBriefDocument): CreatorTopicBrief {
 
 async function ensureProfileDocument(platform: CreatorPlatform) {
   const { profiles } = await getCollections();
-  const existing = await profiles.findOne({ creatorId: CREATOR_ID, platform });
+  const existing = await profiles.findOne({ creatorId: getCreatorId(), platform });
 
   if (existing) {
-    if (shouldUpgradeLegacyProfile(existing)) {
-      const defaults = defaultProfileValues(platform);
+    const needsStructuralUpgrade = shouldUpgradeLegacyProfile(existing);
+    const needsContentRefresh = hasLegacyContentDefaults(existing);
+
+    if (needsStructuralUpgrade || needsContentRefresh) {
+      const defaults = await defaultProfileValues(platform);
       const setPayload: Record<string, unknown> = {
-        name: defaults.name,
-        niche: defaults.niche,
-        brandSummary: defaults.brandSummary,
-        audience: defaults.audience,
-        objective: defaults.objective,
-        defaultRole: defaults.defaultRole,
-        defaultTone: defaults.defaultTone,
         scheduleSlots: existing.scheduleSlots?.length ? existing.scheduleSlots : defaults.scheduleSlots,
         autoGenerateDrafts: typeof existing.autoGenerateDrafts === "boolean" ? existing.autoGenerateDrafts : defaults.autoGenerateDrafts,
         draftScheduleSlots:
@@ -1351,8 +1376,20 @@ async function ensureProfileDocument(platform: CreatorPlatform) {
         postsPerDay: existing.postsPerDay || defaults.postsPerDay,
         planningDays: existing.planningDays || defaults.planningDays,
         imageAspectRatio: existing.imageAspectRatio || defaults.imageAspectRatio,
+        defaultRole: defaults.defaultRole,
+        defaultTone: defaults.defaultTone,
+        objective: defaults.objective,
         updatedAt: now()
       };
+
+      // Only overwrite content fields if they still have legacy hardcoded values
+      if (needsContentRefresh) {
+        setPayload.name = defaults.name;
+        setPayload.niche = defaults.niche;
+        setPayload.brandSummary = defaults.brandSummary;
+        setPayload.audience = defaults.audience;
+      }
+
       const unsetPayload: Record<string, ""> = {};
 
       if (platform === "threads") {
@@ -1368,7 +1405,7 @@ async function ensureProfileDocument(platform: CreatorPlatform) {
 
       await profiles.updateOne({ _id: existing._id }, updatePayload);
 
-      return (await profiles.findOne({ creatorId: CREATOR_ID, platform })) as CreatorProfileDocument;
+      return (await profiles.findOne({ creatorId: getCreatorId(), platform })) as CreatorProfileDocument;
     }
 
     return existing;
@@ -1376,19 +1413,19 @@ async function ensureProfileDocument(platform: CreatorPlatform) {
 
   const createdAt = now();
   const document: CreatorProfileDocument = {
-    ...defaultProfileValues(platform),
+    ...(await defaultProfileValues(platform)),
     createdAt,
     updatedAt: createdAt
   };
 
   await profiles.insertOne(document);
-  return (await profiles.findOne({ creatorId: CREATOR_ID, platform })) as CreatorProfileDocument;
+  return (await profiles.findOne({ creatorId: getCreatorId(), platform })) as CreatorProfileDocument;
 }
 
 async function listAllCreatorProfiles() {
   await Promise.all(platformOrder.map((platform) => ensureProfileDocument(platform)));
   const { profiles } = await getCollections();
-  const items = await profiles.find({ creatorId: CREATOR_ID }).toArray();
+  const items = await profiles.find({ creatorId: getCreatorId() }).toArray();
   return items.map(mapProfile);
 }
 
@@ -1596,7 +1633,7 @@ async function sendDraftToApprovalChannel(
       messagePreview: truncateForLog(approvalMessage, 500)
     });
 
-    const sendResult = await sendWA(approvalTarget, approvalMessage, {
+    const sendResult = await sendWA(getCreatorId(), approvalTarget, approvalMessage, {
       timeoutMs: 120000
     });
 
@@ -1696,7 +1733,7 @@ async function listCreatorPublishLogs(platformInput?: string, limit = 16) {
 }
 
 async function callTopicScoutSearch(query: string, limit = 12) {
-  const settings = await readSettings();
+  const settings = await readSettings(getCreatorId());
 
   if (!settings.topicScoutSearchUrl || !settings.topicScoutSearchApiKey) {
     throw new Error("Topic Scout search config belum lengkap di root Settings.");
@@ -1731,7 +1768,7 @@ async function callTopicScoutSearch(query: string, limit = 12) {
 }
 
 async function callTopicScoutModel(prompt: string) {
-  const settings = await readSettings();
+  const settings = await readSettings(getCreatorId());
 
   if (!settings.topicScoutModelApiKey || !settings.topicScoutModelBaseUrl || !settings.topicScoutModel) {
     throw new Error("Topic Scout model config belum lengkap di root Settings.");
@@ -1779,7 +1816,7 @@ async function listCreatorTopicBriefs(platformInput?: string, options?: { limit?
   const platform = normalizePlatform(platformInput);
   const { topicBriefs } = await getCollections();
   const filter: Record<string, unknown> = {
-    creatorId: CREATOR_ID,
+    creatorId: getCreatorId(),
     platform
   };
 
@@ -1800,7 +1837,7 @@ async function pickFreshTopicBriefDocuments(platform: CreatorPlatform, count: nu
   const { topicBriefs } = await getCollections();
   return topicBriefs
     .find({
-      creatorId: CREATOR_ID,
+      creatorId: getCreatorId(),
       platform,
       status: "fresh"
     })
@@ -1853,7 +1890,7 @@ export async function runCreatorTopicScout(input?: {
 
   const platform = normalizePlatform(input?.platform);
   const profile = await getCreatorProfile(platform);
-  const settings = await readSettings();
+  const settings = await readSettings(getCreatorId());
   const query = buildTopicScoutQuery(platform, profile, input?.query, settings.topicScoutDefaultQuery);
   const limit = Math.max(1, Math.min(Number(input?.limit ?? 20), 30));
   const searchHits = await callTopicScoutSearch(query, Math.max(limit, 10));
@@ -1885,7 +1922,7 @@ export async function runCreatorTopicScout(input?: {
   const { topicBriefs } = await getCollections();
   const existing = await topicBriefs
     .find({
-      creatorId: CREATOR_ID,
+      creatorId: getCreatorId(),
       platform
     })
     .project({ dedupeKey: 1 })
@@ -1918,14 +1955,14 @@ export async function runCreatorTopicScout(input?: {
       ;
 
     const document: CreatorTopicBriefDocument = {
-      creatorId: CREATOR_ID,
+      creatorId: getCreatorId(),
       platform,
       worker: "Scout Web -> Brief Strategist",
       query,
       topic,
-      angle: String(candidate.angle ?? "").trim() || "Angle bisnis hospitality yang relevan",
+      angle: String(candidate.angle ?? "").trim() || "Angle bisnis yang relevan",
       description: String(candidate.description ?? "").trim() || topic,
-      whyNow: String(candidate.whyNow ?? "").trim() || "Relevan dengan dinamika market hospitality saat ini.",
+      whyNow: String(candidate.whyNow ?? "").trim() || "Relevan dengan dinamika market saat ini.",
       tags: ((Array.isArray(candidate.tags) ? candidate.tags : []) as string[]).map((tag: string) => String(tag).trim()).filter(Boolean).slice(0, 8),
       dedupeKey,
       status: "fresh",
@@ -1951,7 +1988,7 @@ export async function runCreatorTopicScout(input?: {
 }
 
 async function callCreatorModel(prompt: string) {
-  const settings = await readSettings();
+  const settings = await readSettings(getCreatorId());
 
   if (!settings.aiApiUrl || !settings.aiApiKey || !settings.aiModel) {
     throw new Error("AI configuration is incomplete.");
@@ -2011,25 +2048,15 @@ function buildPlatformPrompt({
     meta.requiresImage && profile.generateImages
       ? `- Selain caption, buat konsep visual brand-consistent untuk ${meta.label}.
 - WAJIB hasilkan field: visualHeadline, visualSubline, visualCta, visualScene, visualLayout, visualMood, dan visualPrompt.
-- Brand visual harus tetap satu family: premium hospitality tech, navy gelap, electric blue, white, trust, futuristik, modern.
-- Subject utama harus manusia asli yang relevan dengan hotel, hospitality, owner, front office, manager, atau guest.
+- Brand visual harus konsisten dengan identitas brand "${profile.name}" dan niche "${profile.niche}".
+- Subject utama harus manusia asli yang relevan dengan industri dan audience brand.
 - Di dalam gambar harus ada headline pendek besar, subline singkat, dan CTA pill kecil.
 - Jangan tampilkan logo, watermark, nama company, nama brand, wordmark, atau signature apa pun di dalam gambar.
 - Jangan tampilkan kode hex warna, debug text, simbol acak, fake HUD label, atau tulisan teknis dekoratif yang tidak relevan.
-- Jangan buat style retail ramai, jangan dominan merah, jangan seperti poster diskon murahan.
+- Jangan buat style retail ramai atau seperti poster diskon murahan.
 `
       : "";
-  const trendSignals =
-    platform === "threads"
-      ? `
-Current business problems to prioritize:
-- Hotel dan penginapan makin tertekan biaya komisi OTA dan perlu direct booking yang lebih kuat.
-- Lead dari WhatsApp sering hilang karena balasan lambat atau follow-up tidak konsisten.
-- Banyak website hotel tampil bagus tetapi lemah dalam konversi booking.
-- Tim marketing hospitality dituntut membangun first-party audience dan data sendiri, bukan hanya bergantung pada OTA atau platform pihak ketiga.
-- Owner butuh solusi yang terasa cepat diterapkan, hemat biaya, dan langsung berdampak ke revenue.
-`
-      : "";
+  const trendSignals = "";
 
   return `
 Platform: ${meta.label}
@@ -2106,7 +2133,7 @@ async function generateVisualIfNeeded(
     };
   }
 
-  if (!(await hasBytePlusImageConfig())) {
+  if (!(await hasBytePlusImageConfig(getCreatorId()))) {
     return {
       imageUrl: undefined as string | undefined,
       r2ImageUrl: undefined as string | undefined,
@@ -2117,15 +2144,15 @@ async function generateVisualIfNeeded(
 
   const visualPrompt =
     draft.visualPrompt?.trim() ||
-    composeBrandedVisualPrompt(platform, profile, draft, draft.visualConcept)?.trim() ||
+    (await composeBrandedVisualPrompt(platform, profile, draft, draft.visualConcept))?.trim() ||
     `${draft.topic}. ${draft.caption}. Buat visual social media yang premium, relevan, dan stop-scroll untuk ${getPlatformMeta(platform).label}.`;
 
   try {
-    const imageUrl = await generateBytePlusImage({
+    const imageUrl = await generateBytePlusImage(getCreatorId(), {
       prompt: visualPrompt,
       size: aspectRatioToImageSize(profile.imageAspectRatio)
     });
-    const persistedImage = await persistGeneratedImageToR2(imageUrl);
+    const persistedImage = await persistGeneratedImageToR2(getCreatorId(), imageUrl);
 
     return {
       imageUrl,
@@ -2156,7 +2183,7 @@ async function createRegeneratedDraft(
 ) {
   const meta = getPlatformMeta(draft.platform);
   const memorySummary = await buildStyleMemorySummary(draft.platform, 8);
-  const settings = await readSettings();
+  const settings = await readSettings(getCreatorId());
   const seoKeywordConfig = buildSeoKeywordConfig(settings.seoKeywordEnabled, settings.seoKeywordList);
   const seoKeywordInstruction = buildSeoPromptInstruction(seoKeywordConfig);
   const prompt = `
@@ -2219,7 +2246,7 @@ Return JSON:
     seoKeywordConfig
   );
   const visualPrompt = meta.requiresImage
-    ? composeBrandedVisualPrompt(
+    ? await composeBrandedVisualPrompt(
         draft.platform,
         profile,
         {
@@ -2314,7 +2341,7 @@ async function resolveDraftByReference(draftReference?: string, platforms?: Crea
 
 async function findDraftDocumentById(draftId: string) {
   const { drafts } = await getCollections();
-  return drafts.findOne({ draftId, creatorId: CREATOR_ID });
+  return drafts.findOne({ draftId, creatorId: getCreatorId() });
 }
 
 export function listCreatorPlatforms() {
@@ -2338,7 +2365,7 @@ export async function updateCreatorProfile(platformInput: string | undefined, in
     { creatorId: current.creatorId, platform },
     {
       $set: {
-        ...sanitizeProfileInput(platform, input),
+        ...(await sanitizeProfileInput(platform, input)),
         updatedAt: now()
       }
     }
@@ -2352,7 +2379,7 @@ export async function listCreatorKnowledge(platformInput?: string) {
   const { knowledge } = await getCollections();
   const items = await knowledge
     .find({
-      creatorId: CREATOR_ID,
+      creatorId: getCreatorId(),
       platform: { $in: ["all", platform] }
     })
     .sort({ createdAt: -1 })
@@ -2368,7 +2395,7 @@ export async function createCreatorKnowledge(platformInput: string | undefined, 
   const sanitized = sanitizeKnowledgeInput(platform, input);
   const createdAt = now();
   const document: CreatorKnowledgeDocument = {
-    creatorId: CREATOR_ID,
+    creatorId: getCreatorId(),
     platform: sanitized.platform,
     type: sanitized.type,
     title: sanitized.title,
@@ -2385,7 +2412,7 @@ export async function createCreatorKnowledge(platformInput: string | undefined, 
 
 export async function deleteCreatorKnowledge(id: string) {
   const { knowledge } = await getCollections();
-  const result = await knowledge.deleteOne({ _id: new ObjectId(id), creatorId: CREATOR_ID });
+  const result = await knowledge.deleteOne({ _id: new ObjectId(id), creatorId: getCreatorId() });
   return result.deletedCount > 0;
 }
 
@@ -2393,7 +2420,7 @@ export async function listCreatorDrafts(platformInput?: string, limit = 20) {
   const platform = normalizePlatform(platformInput);
   const { drafts } = await getCollections();
   const documents = await drafts
-    .find({ creatorId: CREATOR_ID, platform })
+    .find({ creatorId: getCreatorId(), platform })
     .sort({ updatedAt: -1 })
     .limit(limit)
     .toArray();
@@ -2453,7 +2480,7 @@ export async function simulateCreatorDrafts(input?: {
   const tone = (input?.tone ?? profile.defaultTone) as CreatorTone;
   const objective = (input?.objective ?? profile.objective) as CreatorObjective;
   const type = (input?.type ?? meta.defaultType) as CreatorDraftType;
-  const settings = await readSettings();
+  const settings = await readSettings(getCreatorId());
   const seoKeywordConfig = buildSeoKeywordConfig(settings.seoKeywordEnabled, settings.seoKeywordList);
   const seoKeywordInstruction = buildSeoPromptInstruction(seoKeywordConfig);
   const manualTopic = input?.topic?.trim();
@@ -2521,7 +2548,7 @@ export async function simulateCreatorDrafts(input?: {
       seoKeywordConfig
     );
     const visualPrompt = meta.requiresImage
-      ? composeBrandedVisualPrompt(
+      ? await composeBrandedVisualPrompt(
           platform,
           profile,
           {
@@ -2541,7 +2568,7 @@ export async function simulateCreatorDrafts(input?: {
     previews.push({
       id: `preview-${platform}-${index + 1}`,
       draftId: `PREVIEW-${index + 1}`,
-      creatorId: CREATOR_ID,
+      creatorId: getCreatorId(),
       platform,
       type,
       role,
@@ -2592,7 +2619,7 @@ export async function runCreatorPlayground(input?: {
 }) {
   const drafts = await simulateCreatorDrafts(input);
   const simulations = input?.simulateUpload
-    ? await Promise.all(drafts.map((draft) => simulatePlatformPublish(draft)))
+    ? await Promise.all(drafts.map((draft) => simulatePlatformPublish(getCreatorId(), draft)))
     : [];
 
   return {
@@ -2624,7 +2651,7 @@ export async function generateCreatorDrafts(input?: {
   const tone = (input?.tone ?? profile.defaultTone) as CreatorTone;
   const objective = (input?.objective ?? profile.objective) as CreatorObjective;
   const type = (input?.type ?? meta.defaultType) as CreatorDraftType;
-  const settings = await readSettings();
+  const settings = await readSettings(getCreatorId());
   const seoKeywordConfig = buildSeoKeywordConfig(settings.seoKeywordEnabled, settings.seoKeywordList);
   const seoKeywordInstruction = buildSeoPromptInstruction(seoKeywordConfig);
   const autoSend = input?.autoSend !== false;
@@ -2707,7 +2734,7 @@ export async function generateCreatorDrafts(input?: {
       seoKeywordConfig
     );
     const visualPrompt = meta.requiresImage
-      ? composeBrandedVisualPrompt(
+      ? await composeBrandedVisualPrompt(
           platform,
           profile,
           {
@@ -2726,7 +2753,7 @@ export async function generateCreatorDrafts(input?: {
 
     const document: CreatorDraftDocument = {
       draftId: buildDraftIdentifier(platform),
-      creatorId: CREATOR_ID,
+      creatorId: getCreatorId(),
       platform,
       type,
       role,
@@ -2787,7 +2814,7 @@ export async function simulateCreatorDraftUpload(draftId: string) {
   }
 
   const draft = mapDraft(document);
-  const simulation = await simulatePlatformPublish(draft);
+  const simulation = await simulatePlatformPublish(getCreatorId(), draft);
 
   await logPublishOutcome({
     draftId: draft.draftId,
@@ -2811,7 +2838,7 @@ export async function publishCreatorDraft(
     appBaseUrl?: string;
   }
 ) {
-  const settings = await readSettings();
+  const settings = await readSettings(getCreatorId());
   const document = await findDraftDocumentById(draftId);
 
   if (!document) {
@@ -2839,7 +2866,7 @@ export async function publishCreatorDraft(
   const actionTime = now();
 
   try {
-    const result = await publishDraftToPlatform(mapDraft(document), {
+    const result = await publishDraftToPlatform(getCreatorId(), mapDraft(document), {
       appBaseUrl: options?.appBaseUrl
     });
 
@@ -2928,7 +2955,7 @@ export async function processDueCreatorDraftGenerations(options?: {
   force?: boolean;
   limit?: number;
 }) {
-  const settings = await readSettings();
+  const settings = await readSettings(getCreatorId());
 
   if (!settings.creatorGenerationEnabled) {
     return {
@@ -2959,7 +2986,7 @@ export async function processDueCreatorDraftGenerations(options?: {
 
   for (const dueEntry of dueSlots) {
     const existingDraft = await collections.drafts.findOne({
-      creatorId: CREATOR_ID,
+      creatorId: getCreatorId(),
       platform: dueEntry.profile.platform,
       generationSlotKey: dueEntry.slotKey
     });
@@ -2997,7 +3024,7 @@ export async function processDueCreatorDrafts(options?: {
   force?: boolean;
   limit?: number;
 }) {
-  const settings = await readSettings();
+  const settings = await readSettings(getCreatorId());
   const configuredAppBaseUrl =
     process.env.APP_BASE_URL?.trim().replace(/\/$/, "") ||
     process.env.NEXT_PUBLIC_APP_URL?.trim().replace(/\/$/, "") ||
@@ -3016,7 +3043,7 @@ export async function processDueCreatorDrafts(options?: {
   const { drafts } = await getCollections();
   const dueDrafts = await drafts
     .find({
-      creatorId: CREATOR_ID,
+      creatorId: getCreatorId(),
       status: "scheduled",
       scheduledFor: { $lte: now() }
     })
@@ -3056,7 +3083,7 @@ export async function processDueCreatorDrafts(options?: {
 
 export async function sendDraftApprovalMessage(draftId: string) {
   const { drafts } = await getCollections();
-  const document = await drafts.findOne({ draftId, creatorId: CREATOR_ID });
+  const document = await drafts.findOne({ draftId, creatorId: getCreatorId() });
 
   console.info("[creator.approval.manual] Manual send requested", {
     draftId
@@ -3116,7 +3143,7 @@ export async function applyCreatorDraftAction(
   }
 ) {
   const { drafts } = await getCollections();
-  const document = await drafts.findOne({ draftId, creatorId: CREATOR_ID });
+  const document = await drafts.findOne({ draftId, creatorId: getCreatorId() });
 
   if (!document) {
     throw new Error("Draft not found.");
@@ -3266,7 +3293,7 @@ export async function approveAllCreatorDrafts(platform: CreatorPlatform) {
   const usedScheduleSlots = await listUsedScheduleSlots(platform);
   const targetDrafts = await drafts
     .find({
-      creatorId: CREATOR_ID,
+      creatorId: getCreatorId(),
       platform,
       status: "draft"
     })
@@ -3408,4 +3435,38 @@ export async function handleCreatorApprovalCommand(from: string, message: string
     matched: true as const,
     reply: result.reply
   };
+}
+
+// ============================================================================
+// Tenant-aware wrappers
+// ----------------------------------------------------------------------------
+// All exports above rely on currentBusinessId() via async-local context. The
+// wrappers below let callers (API routes, cron handlers, webhook) explicitly
+// pass a businessId without having to import runInBusinessContext directly.
+// ============================================================================
+
+export async function withCreatorBusiness<T>(businessId: string, fn: () => Promise<T>): Promise<T> {
+  return runInBusinessContext(businessId, fn);
+}
+
+export async function processDueCreatorDraftGenerationsForBusiness(
+  businessId: string,
+  options?: { force?: boolean; limit?: number }
+) {
+  return runInBusinessContext(businessId, () => processDueCreatorDraftGenerations(options));
+}
+
+export async function processDueCreatorDraftsForBusiness(
+  businessId: string,
+  options?: { force?: boolean; limit?: number }
+) {
+  return runInBusinessContext(businessId, () => processDueCreatorDrafts(options));
+}
+
+export async function handleCreatorApprovalCommandForBusiness(
+  businessId: string,
+  from: string,
+  message: string
+) {
+  return runInBusinessContext(businessId, () => handleCreatorApprovalCommand(from, message));
 }

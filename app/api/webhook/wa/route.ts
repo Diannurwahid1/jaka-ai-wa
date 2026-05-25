@@ -1,13 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
 
 import { askAI } from "@/lib/ai";
-import { handleCreatorApprovalCommand } from "@/lib/creator";
+import { findBusinessByWaSessionId, getDefaultBusiness } from "@/lib/business";
+import { handleCreatorApprovalCommandForBusiness } from "@/lib/creator";
 import { matchesHeaderSecret, verifySignedPayload } from "@/lib/security";
 import { readSettings } from "@/lib/settings";
 import { appendWebhookEvent } from "@/lib/webhook-debug";
 import { createMessage, updateMessage } from "@/lib/store";
 import { detectIntent } from "@/lib/utils";
 import { extractWebhookPayload, formatInboundForwardMessage, getInboundForwardTarget, sendWA } from "@/lib/wa";
+import { prisma } from "@/lib/prisma";
 
 function pickHeaders(request: NextRequest) {
   const interesting = [
@@ -27,6 +29,70 @@ function pickHeaders(request: NextRequest) {
   );
 }
 
+function extractWaSessionFromPayload(body: unknown): string {
+  if (!body || typeof body !== "object") {
+    return "";
+  }
+
+  const root = body as Record<string, unknown>;
+  // Try common shapes: { sessionId }, { session_id }, { session: { id } }, { metadata: { session_id } }
+  const candidates: unknown[] = [
+    root.sessionId,
+    root.session_id,
+    root.session,
+    (root.metadata as Record<string, unknown> | undefined)?.session_id,
+    (root.metadata as Record<string, unknown> | undefined)?.sessionId,
+    (root.data as Record<string, unknown> | undefined)?.sessionId,
+    (root.data as Record<string, unknown> | undefined)?.session_id
+  ];
+
+  for (const candidate of candidates) {
+    if (typeof candidate === "string" && candidate.trim()) {
+      return candidate.trim();
+    }
+    if (candidate && typeof candidate === "object") {
+      const nestedId = (candidate as Record<string, unknown>).id;
+      if (typeof nestedId === "string" && nestedId.trim()) {
+        return nestedId.trim();
+      }
+    }
+  }
+
+  return "";
+}
+
+async function resolveWebhookBusinessId(rawBody: string, waSessionFromQuery: string) {
+  const trimmedQuerySession = waSessionFromQuery.trim();
+
+  if (trimmedQuerySession) {
+    const business = await findBusinessByWaSessionId(trimmedQuerySession);
+    if (business) {
+      return business;
+    }
+  }
+
+  if (!rawBody) {
+    return null;
+  }
+
+  let body: unknown;
+  try {
+    body = JSON.parse(rawBody);
+  } catch {
+    return null;
+  }
+
+  const sessionFromBody = extractWaSessionFromPayload(body);
+  if (sessionFromBody) {
+    const business = await findBusinessByWaSessionId(sessionFromBody);
+    if (business) {
+      return business;
+    }
+  }
+
+  return null;
+}
+
 export async function GET() {
   return NextResponse.json({ ok: true, message: "WA webhook route is ready" });
 }
@@ -34,11 +100,28 @@ export async function GET() {
 export async function POST(request: NextRequest) {
   const rawBody = await request.text();
   const headers = pickHeaders(request);
-  const settings = await readSettings();
+  const waSessionFromQuery = request.nextUrl.searchParams.get("sessionId") ?? "";
+
+  // Resolve which business this webhook hit belongs to.
+  // Strategy: match the incoming waSessionId to a business AppConfig.
+  // Falls back to the default business when nothing matches (single-tenant compatibility).
+  let business = await resolveWebhookBusinessId(rawBody, waSessionFromQuery);
+
+  if (!business) {
+    business = await getDefaultBusiness();
+  }
+
+  if (!business) {
+    // No business at all (fresh install, default seed missing). Reject.
+    return NextResponse.json({ ok: false, reason: "Tidak ada business yang terdaftar untuk webhook" }, { status: 503 });
+  }
+
+  const businessId = business.id;
+  const settings = await readSettings(businessId);
   const webhookSecret = settings.waMasterKey.trim();
 
   if (!webhookSecret) {
-    await appendWebhookEvent({
+    await appendWebhookEvent(businessId, {
       stage: "rejected",
       reason: "WA webhook secret belum dikonfigurasi",
       rawBody: rawBody.slice(0, 4000),
@@ -62,7 +145,7 @@ export async function POST(request: NextRequest) {
     verifySignedPayload(webhookSecret, rawBody, signatureHeaders);
 
   if (!signatureValid) {
-    await appendWebhookEvent({
+    await appendWebhookEvent(businessId, {
       stage: "rejected",
       reason: "Invalid webhook signature",
       rawBody: rawBody.slice(0, 4000),
@@ -79,7 +162,7 @@ export async function POST(request: NextRequest) {
   } catch (error) {
     const reason = error instanceof Error ? error.message : "Invalid JSON";
 
-    await appendWebhookEvent({
+    await appendWebhookEvent(businessId, {
       stage: "invalid_json",
       reason,
       rawBody: rawBody.slice(0, 4000),
@@ -91,7 +174,7 @@ export async function POST(request: NextRequest) {
 
   const { from, message, receivedAt, isInbound } = extractWebhookPayload(body);
 
-  await appendWebhookEvent({
+  await appendWebhookEvent(businessId, {
     stage: "received",
     from,
     message,
@@ -100,7 +183,7 @@ export async function POST(request: NextRequest) {
   });
 
   if (!isInbound) {
-    await appendWebhookEvent({
+    await appendWebhookEvent(businessId, {
       stage: "ignored",
       from,
       message,
@@ -113,7 +196,7 @@ export async function POST(request: NextRequest) {
   }
 
   if (!from || !message) {
-    await appendWebhookEvent({
+    await appendWebhookEvent(businessId, {
       stage: "ignored",
       from,
       message,
@@ -125,7 +208,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ ok: true, ignored: true, reason: "Invalid payload shape" });
   }
 
-  const log = await createMessage({
+  const log = await createMessage(businessId, {
     from,
     message,
     reply: "",
@@ -143,9 +226,9 @@ export async function POST(request: NextRequest) {
         message,
         receivedAt
       });
-      const forwardResult = await sendWA(inboundForwardTarget, forwardMessage);
+      const forwardResult = await sendWA(businessId, inboundForwardTarget, forwardMessage);
 
-      await appendWebhookEvent({
+      await appendWebhookEvent(businessId, {
         stage: "forwarded_copy",
         from,
         message,
@@ -154,7 +237,7 @@ export async function POST(request: NextRequest) {
     } catch (error) {
       const forwardReason = error instanceof Error ? error.message : "Unknown forward error";
 
-      await appendWebhookEvent({
+      await appendWebhookEvent(businessId, {
         stage: "forward_failed",
         from,
         message,
@@ -163,18 +246,21 @@ export async function POST(request: NextRequest) {
     }
   }
 
+  // Silence the unused prisma import warning while keeping the lazy reference around for future audit logs.
+  void prisma;
+
   try {
-    const creatorCommand = await handleCreatorApprovalCommand(from, message);
+    const creatorCommand = await handleCreatorApprovalCommandForBusiness(businessId, from, message);
 
     if (creatorCommand.matched) {
-      const sendResult = await sendWA(from, creatorCommand.reply);
+      const sendResult = await sendWA(businessId, from, creatorCommand.reply);
 
-      await updateMessage(log.id, {
+      await updateMessage(businessId, log.id, {
         reply: creatorCommand.reply,
         status: "success"
       });
 
-      await appendWebhookEvent({
+      await appendWebhookEvent(businessId, {
         stage: "creator_command",
         from,
         message,
@@ -185,11 +271,11 @@ export async function POST(request: NextRequest) {
     }
 
     if (!settings.aiAutoReplyEnabled) {
-      await updateMessage(log.id, {
+      await updateMessage(businessId, log.id, {
         status: "success"
       });
 
-      await appendWebhookEvent({
+      await appendWebhookEvent(businessId, {
         stage: "ignored",
         from,
         message,
@@ -199,19 +285,19 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ ok: true, aiDisabled: true, replySent: false });
     }
 
-    const aiReply = await askAI(message, {
+    const aiReply = await askAI(businessId, message, {
       phone: from,
       remember: true
     });
 
-    const sendResult = await sendWA(from, aiReply);
+    const sendResult = await sendWA(businessId, from, aiReply);
 
-    await updateMessage(log.id, {
+    await updateMessage(businessId, log.id, {
       reply: aiReply,
       status: "success"
     });
 
-    await appendWebhookEvent({
+    await appendWebhookEvent(businessId, {
       stage: "processed",
       from,
       message,
@@ -222,12 +308,12 @@ export async function POST(request: NextRequest) {
   } catch (error) {
     const reason = error instanceof Error ? error.message : "Unknown error";
 
-    await updateMessage(log.id, {
+    await updateMessage(businessId, log.id, {
       status: "failed",
       error: reason
     });
 
-    await appendWebhookEvent({
+    await appendWebhookEvent(businessId, {
       stage: "failed",
       from,
       message,

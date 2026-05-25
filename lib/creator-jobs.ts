@@ -1,5 +1,6 @@
 import { randomUUID } from "crypto";
 
+import { runInBusinessContext } from "@/lib/business-context";
 import { generateCreatorDrafts, runCreatorPlayground } from "@/lib/creator";
 import { CreatorDraft, CreatorObjective, CreatorPlatform, CreatorPublishSimulation, CreatorRole, CreatorTone } from "@/types/creator";
 
@@ -36,6 +37,7 @@ type CreatorJobResult =
 
 export type CreatorAsyncJob = {
   jobId: string;
+  businessId: string;
   platform: CreatorPlatform | string;
   kind: "generate" | "playground";
   status: "queued" | "running" | "completed" | "failed";
@@ -68,10 +70,11 @@ function scheduleCleanup(jobId: string) {
   }, jobRetentionMs).unref?.();
 }
 
-function createJob(kind: CreatorAsyncJob["kind"], platform: CreatorPlatform | string) {
+function createJob(kind: CreatorAsyncJob["kind"], businessId: string, platform: CreatorPlatform | string) {
   const createdAt = nowIso();
   const job: CreatorAsyncJob = {
     jobId: randomUUID(),
+    businessId,
     platform,
     kind,
     status: "queued",
@@ -96,18 +99,22 @@ function patchJob(jobId: string, patch: Partial<CreatorAsyncJob>) {
   });
 }
 
-export function getCreatorJob(jobId: string) {
-  return jobStore.get(jobId) ?? null;
+export function getCreatorJob(businessId: string, jobId: string) {
+  const job = jobStore.get(jobId);
+  if (!job || job.businessId !== businessId) {
+    return null;
+  }
+  return job;
 }
 
-export function startGenerateCreatorJob(input: GenerateJobInput) {
-  const job = createJob("generate", input.platform ?? "threads");
+export function startGenerateCreatorJob(businessId: string, input: GenerateJobInput) {
+  const job = createJob("generate", businessId, input.platform ?? "threads");
 
   setImmediate(async () => {
     patchJob(job.jobId, { status: "running" });
 
     try {
-      const drafts = await generateCreatorDrafts(input);
+      const drafts = await runInBusinessContext(businessId, () => generateCreatorDrafts(input));
       patchJob(job.jobId, {
         status: "completed",
         result: {
@@ -126,14 +133,14 @@ export function startGenerateCreatorJob(input: GenerateJobInput) {
   return job;
 }
 
-export function startPlaygroundCreatorJob(input: PlaygroundJobInput) {
-  const job = createJob("playground", input.platform ?? "threads");
+export function startPlaygroundCreatorJob(businessId: string, input: PlaygroundJobInput) {
+  const job = createJob("playground", businessId, input.platform ?? "threads");
 
   setImmediate(async () => {
     patchJob(job.jobId, { status: "running" });
 
     try {
-      const result = await runCreatorPlayground(input);
+      const result = await runInBusinessContext(businessId, () => runCreatorPlayground(input));
       patchJob(job.jobId, {
         status: "completed",
         result: {

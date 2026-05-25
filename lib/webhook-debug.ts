@@ -21,6 +21,8 @@ export type WebhookDebugEvent = {
   headers?: Record<string, string>;
 };
 
+const PER_BUSINESS_RETENTION = 100;
+
 function mapEvent(event: {
   id: string;
   createdAt: Date;
@@ -46,10 +48,12 @@ function mapEvent(event: {
 }
 
 export async function appendWebhookEvent(
+  businessId: string,
   event: Omit<WebhookDebugEvent, "id" | "createdAt">
 ) {
   const created = await prisma.webhookEvent.create({
     data: {
+      businessId,
       stage: event.stage,
       fromPhone: event.from ?? null,
       message: event.message ?? null,
@@ -60,12 +64,13 @@ export async function appendWebhookEvent(
     }
   });
 
-  const count = await prisma.webhookEvent.count();
+  const count = await prisma.webhookEvent.count({ where: { businessId } });
 
-  if (count > 100) {
+  if (count > PER_BUSINESS_RETENTION) {
     const stale = await prisma.webhookEvent.findMany({
+      where: { businessId },
       orderBy: { createdAt: "desc" },
-      skip: 100,
+      skip: PER_BUSINESS_RETENTION,
       select: { id: true }
     });
 
@@ -79,8 +84,9 @@ export async function appendWebhookEvent(
   return mapEvent(created);
 }
 
-export async function getWebhookEvents(limit = 20) {
+export async function getWebhookEvents(businessId: string, limit = 20) {
   const events = await prisma.webhookEvent.findMany({
+    where: { businessId },
     orderBy: { createdAt: "desc" },
     take: limit
   });

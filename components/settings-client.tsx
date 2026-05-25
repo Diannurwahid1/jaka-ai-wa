@@ -245,6 +245,16 @@ export function SettingsClient() {
     confirmPassword: ""
   });
 
+  const [businessProfile, setBusinessProfile] = useState<{
+    name: string;
+    niche: string;
+    brandSummary: string;
+    audience: string;
+    brandVisualStyle: string;
+  }>({ name: "", niche: "", brandSummary: "", audience: "", brandVisualStyle: "" });
+  const [businessLoading, setBusinessLoading] = useState(true);
+  const [businessSaving, setBusinessSaving] = useState(false);
+
   useEffect(() => {
     let active = true;
 
@@ -274,8 +284,28 @@ export function SettingsClient() {
       }
     }
 
+    async function loadBusiness() {
+      const response = await fetch("/api/business", { cache: "no-store" });
+      const payload = await response.json();
+
+      if (active && payload.ok && payload.business) {
+        setBusinessProfile({
+          name: payload.business.name ?? "",
+          niche: payload.business.niche ?? "",
+          brandSummary: payload.business.brandSummary ?? "",
+          audience: payload.business.audience ?? "",
+          brandVisualStyle: payload.business.brandVisualStyle ?? ""
+        });
+      }
+
+      if (active) {
+        setBusinessLoading(false);
+      }
+    }
+
     loadSettings();
     loadSecurity();
+    loadBusiness();
 
     return () => {
       active = false;
@@ -1315,6 +1345,107 @@ export function SettingsClient() {
             <div className="rounded-2xl bg-slate-50 px-4 py-3 text-sm leading-6 text-slate-600">
               Format bebas. Boleh pakai heading, tanda kutip, atau bracket seperti daftar Google Ads. Sistem akan membersihkan format itu, memilih keyword acak sesuai konteks, lalu menaruhnya natural di caption atau di penutup &quot;Pencarian terkait&quot;.
             </div>
+          </div>
+        </section>
+
+        <section className="rounded-[32px] border border-slate-200/60 bg-white p-6 shadow-panel">
+          <div className="mb-5">
+            <h3 className="text-lg font-semibold text-slate-950">Brand Visual Style</h3>
+            <p className="mt-1 text-sm text-slate-500">
+              Atur gaya visual untuk image generation Jaka Creator. Deskripsi ini menentukan warna, mood, dan style gambar yang dihasilkan AI untuk bisnis ini.
+            </p>
+          </div>
+
+          <div className="space-y-4">
+            <InputField
+              label="Nama Bisnis"
+              value={businessProfile.name}
+              onChange={(nextValue) => setBusinessProfile((current) => ({ ...current, name: nextValue }))}
+              placeholder="Nama brand/bisnis"
+            />
+            <InputField
+              label="Niche"
+              value={businessProfile.niche}
+              onChange={(nextValue) => setBusinessProfile((current) => ({ ...current, niche: nextValue }))}
+              placeholder="Contoh: Fitness, gym management, personal training"
+            />
+
+            <label className="space-y-2">
+              <span className="text-sm font-medium text-slate-700">Brand Summary</span>
+              <textarea
+                value={businessProfile.brandSummary}
+                onChange={(event) =>
+                  setBusinessProfile((current) => ({ ...current, brandSummary: event.target.value }))
+                }
+                rows={3}
+                className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm leading-6 text-slate-900"
+                placeholder="Deskripsi singkat tentang brand dan value proposition"
+              />
+            </label>
+
+            <label className="space-y-2">
+              <span className="text-sm font-medium text-slate-700">Target Audience</span>
+              <textarea
+                value={businessProfile.audience}
+                onChange={(event) =>
+                  setBusinessProfile((current) => ({ ...current, audience: event.target.value }))
+                }
+                rows={3}
+                className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm leading-6 text-slate-900"
+                placeholder="Siapa target audience brand ini"
+              />
+            </label>
+
+            <label className="space-y-2">
+              <span className="text-sm font-medium text-slate-700">Visual Style (Image Generation)</span>
+              <textarea
+                value={businessProfile.brandVisualStyle}
+                onChange={(event) =>
+                  setBusinessProfile((current) => ({ ...current, brandVisualStyle: event.target.value }))
+                }
+                rows={6}
+                className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm leading-6 text-slate-900"
+                placeholder={"Contoh:\nTheme: energetic fitness, modern gym, motivational.\nColor direction: bold orange, dark charcoal, white accents.\nMood: powerful, energetic, motivational, clean.\nSubject: real gym members, trainers, fitness equipment, workout scenes."}
+              />
+            </label>
+
+            <div className="rounded-2xl bg-slate-50 px-4 py-3 text-sm leading-6 text-slate-600">
+              Tulis instruksi visual dalam bahasa Inggris. Jelaskan tema, warna dominan, mood, dan jenis subject yang diinginkan.
+              Jika kosong, AI akan menggunakan style generic premium. Contoh untuk gym:{" "}
+              <span className="font-medium text-slate-900">
+                &quot;Theme: energetic fitness. Color: bold orange, dark charcoal. Subject: real gym members working out.&quot;
+              </span>
+            </div>
+
+            <button
+              type="button"
+              onClick={async () => {
+                setBusinessSaving(true);
+                try {
+                  const response = await fetch("/api/business", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify(businessProfile)
+                  });
+                  const payload = await response.json();
+                  if (!response.ok || !payload.ok) {
+                    throw new Error(payload.reason || "Gagal menyimpan profil bisnis");
+                  }
+                  pushToast({ title: "Profil bisnis dan visual style berhasil disimpan", tone: "success" });
+                } catch (error) {
+                  pushToast({
+                    title: error instanceof Error ? error.message : "Gagal menyimpan profil bisnis",
+                    tone: "error"
+                  });
+                } finally {
+                  setBusinessSaving(false);
+                }
+              }}
+              disabled={businessSaving || businessLoading}
+              className="rounded-2xl bg-slate-950 px-5 py-3 text-sm font-medium text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {businessSaving ? "Menyimpan..." : "Simpan Brand Profile"}
+            </button>
           </div>
         </section>
 

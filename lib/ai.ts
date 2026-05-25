@@ -9,8 +9,8 @@ type AskAIOptions = {
   useRag?: boolean;
 };
 
-export async function askAI(message: string, options?: AskAIOptions) {
-  const settings = await readSettings();
+export async function askAI(businessId: string, message: string, options?: AskAIOptions) {
+  const settings = await readSettings(businessId);
 
   if (!settings.aiApiKey || !settings.aiApiUrl) {
     throw new Error("AI configuration is incomplete.");
@@ -32,14 +32,14 @@ export async function askAI(message: string, options?: AskAIOptions) {
   ];
 
   if (remember && phone) {
-    await resetIfExpired(phone);
-    await saveMessage(phone, "user", message);
-    messages = await buildContextMessages(phone, settings.promptSystem);
+    await resetIfExpired(businessId, phone);
+    await saveMessage(businessId, phone, "user", message);
+    messages = await buildContextMessages(businessId, phone, settings.promptSystem);
   }
 
   if (useRag) {
     try {
-      const knowledge = await retrieveKnowledgeContext(message);
+      const knowledge = await retrieveKnowledgeContext(businessId, message);
 
       if (knowledge.results.length > 0 && knowledge.context.trim()) {
         messages.splice(1, 0, {
@@ -73,14 +73,14 @@ export async function askAI(message: string, options?: AskAIOptions) {
   const reply = data.choices?.[0]?.message?.content?.trim() || "Maaf, terjadi kesalahan.";
 
   if (remember && phone) {
-    await saveMessage(phone, "assistant", reply);
+    await saveMessage(businessId, phone, "assistant", reply);
   }
 
   return reply;
 }
 
-export async function testAIConnection() {
-  const settings = await readSettings();
+export async function testAIConnection(businessId: string) {
+  const settings = await readSettings(businessId);
 
   if (!settings.aiApiKey || !settings.aiApiUrl || !settings.aiModel) {
     throw new Error("AI configuration is incomplete.");

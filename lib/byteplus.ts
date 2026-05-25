@@ -15,8 +15,8 @@ function isSupportedBytePlusImageModel(model: string) {
   return supportedImageModelPrefixes.some((prefix) => normalized.startsWith(prefix));
 }
 
-async function readBytePlusConfig() {
-  const settings = await readSettings();
+async function readBytePlusConfig(businessId: string) {
+  const settings = await readSettings(businessId);
   return {
     apiKey: settings.bytePlusApiKey.trim() || process.env.ARK_API_KEY?.trim() || "",
     baseUrl: settings.bytePlusBaseUrl.trim() || process.env.ARK_BASE_URL?.trim() || defaultBaseUrl,
@@ -27,13 +27,13 @@ async function readBytePlusConfig() {
   };
 }
 
-export async function hasBytePlusImageConfig() {
-  const config = await readBytePlusConfig();
+export async function hasBytePlusImageConfig(businessId: string) {
+  const config = await readBytePlusConfig(businessId);
   return Boolean(config.apiKey);
 }
 
-export async function generateBytePlusImage(input: GenerateBytePlusImageInput) {
-  const config = await readBytePlusConfig();
+export async function generateBytePlusImage(businessId: string, input: GenerateBytePlusImageInput) {
+  const config = await readBytePlusConfig(businessId);
   const selectedModel = input.model?.trim() || config.imageModel;
 
   if (!config.apiKey) {

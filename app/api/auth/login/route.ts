@@ -40,14 +40,16 @@ export async function POST(request: NextRequest) {
 
     const token = await createSessionToken({
       sub: user.id,
-      email: user.email
+      email: user.email,
+      businessId: user.businessId
     });
 
     const response = NextResponse.json({
       ok: true,
       user: {
         id: user.id,
-        email: user.email
+        email: user.email,
+        businessId: user.businessId
       }
     });
 

@@ -1,10 +1,12 @@
 import { NextResponse } from "next/server";
 
-import { processDueCreatorDrafts } from "@/lib/creator";
+import { requireSession } from "@/lib/auth";
+import { processDueCreatorDraftsForBusiness } from "@/lib/creator";
 
 export async function POST() {
   try {
-    const result = await processDueCreatorDrafts({ force: true });
+    const session = await requireSession();
+    const result = await processDueCreatorDraftsForBusiness(session.businessId, { force: true });
     return NextResponse.json({ ok: true, result });
   } catch (error) {
     const reason = error instanceof Error ? error.message : "Unknown error";

@@ -160,8 +160,8 @@ function buildAbortSignal(timeoutMs?: number) {
   return AbortSignal.timeout(timeoutMs);
 }
 
-export async function sendWA(to: string, message: string, options?: SendWAOptions): Promise<SendWAResult> {
-  const settings = await readSettings();
+export async function sendWA(businessId: string, to: string, message: string, options?: SendWAOptions): Promise<SendWAResult> {
+  const settings = await readSettings(businessId);
 
   if (!settings.waApiUrl || !settings.waSessionId || !settings.waToken) {
     console.error("[wa.send] Missing WA configuration", {
@@ -264,8 +264,8 @@ export async function sendWA(to: string, message: string, options?: SendWAOption
   }
 }
 
-export async function testWAConnection() {
-  const settings = await readSettings();
+export async function testWAConnection(businessId: string) {
+  const settings = await readSettings(businessId);
 
   if (!settings.waApiUrl || !settings.waSessionId || !settings.waToken) {
     throw new Error("WA Blast configuration is incomplete.");

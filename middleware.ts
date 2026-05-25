@@ -16,7 +16,12 @@ async function hasValidSession(request: NextRequest) {
   }
 
   try {
-    await verifySessionToken(token);
+    const session = await verifySessionToken(token);
+    // Reject legacy sessions that don't carry a businessId. The user will be
+    // redirected to /login and a fresh token (with businessId) is issued there.
+    if (!session.businessId) {
+      return false;
+    }
     return true;
   } catch {
     return false;

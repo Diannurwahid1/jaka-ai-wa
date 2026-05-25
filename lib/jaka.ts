@@ -169,6 +169,7 @@ function safeParseJakaResponse(raw: string) {
 }
 
 export async function askJakaAI(
+  businessId: string,
   question: string,
   name?: string,
   pathname?: string,
@@ -183,7 +184,7 @@ export async function askJakaAI(
     };
   }
 
-  const settings = await readSettings();
+  const settings = await readSettings(businessId);
 
   if (!settings.aiApiKey || !settings.aiApiUrl) {
     return {
