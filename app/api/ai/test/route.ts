@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 
-import { askAI } from "@/lib/ai";
+import { askAIWithUsage } from "@/lib/ai";
 import { requireSession } from "@/lib/auth";
 import { createMessage, updateMessage } from "@/lib/store";
 import { detectIntent } from "@/lib/utils";
@@ -26,17 +26,24 @@ export async function POST(request: NextRequest) {
     });
 
     try {
-      const reply = await askAI(session.businessId, message, {
+      const result = await askAIWithUsage(session.businessId, message, {
         phone: from,
         remember: true
       });
 
       await updateMessage(session.businessId, log.id, {
-        reply,
+        reply: result.reply,
         status: "success"
       });
 
-      return NextResponse.json({ ok: true, reply, id: log.id });
+      return NextResponse.json({
+        ok: true,
+        reply: result.reply,
+        id: log.id,
+        usage: result.usage,
+        model: result.model,
+        durationMs: result.durationMs
+      });
     } catch (error) {
       const reason = error instanceof Error ? error.message : "Unknown error";
 

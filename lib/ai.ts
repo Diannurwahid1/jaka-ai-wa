@@ -9,7 +9,29 @@ type AskAIOptions = {
   useRag?: boolean;
 };
 
+export type AIUsage = {
+  promptTokens: number;
+  completionTokens: number;
+  totalTokens: number;
+};
+
+export type AskAIDetailed = {
+  reply: string;
+  usage: AIUsage;
+  model: string;
+  durationMs: number;
+};
+
 export async function askAI(businessId: string, message: string, options?: AskAIOptions) {
+  const detailed = await askAIWithUsage(businessId, message, options);
+  return detailed.reply;
+}
+
+export async function askAIWithUsage(
+  businessId: string,
+  message: string,
+  options?: AskAIOptions
+): Promise<AskAIDetailed> {
   const settings = await readSettings(businessId);
 
   if (!settings.aiApiKey || !settings.aiApiUrl) {
@@ -54,6 +76,7 @@ export async function askAI(businessId: string, message: string, options?: AskAI
     }
   }
 
+  const startedAt = Date.now();
   const response = await postChatCompletion({
     apiUrl: settings.aiApiUrl,
     apiKey: settings.aiApiKey,
@@ -71,12 +94,41 @@ export async function askAI(businessId: string, message: string, options?: AskAI
 
   const data = await response.json();
   const reply = data.choices?.[0]?.message?.content?.trim() || "Maaf, terjadi kesalahan.";
+  const usage = extractUsage(data);
+  const durationMs = Date.now() - startedAt;
 
   if (remember && phone) {
     await saveMessage(businessId, phone, "assistant", reply);
   }
 
-  return reply;
+  return {
+    reply,
+    usage,
+    model: settings.aiModel,
+    durationMs
+  };
+}
+
+function extractUsage(payload: unknown): AIUsage {
+  if (!payload || typeof payload !== "object") {
+    return { promptTokens: 0, completionTokens: 0, totalTokens: 0 };
+  }
+
+  const usage = (payload as Record<string, unknown>).usage as Record<string, unknown> | undefined;
+  if (!usage || typeof usage !== "object") {
+    return { promptTokens: 0, completionTokens: 0, totalTokens: 0 };
+  }
+
+  const promptTokens = numberFromUsage(usage.prompt_tokens ?? usage.promptTokens ?? usage.input_tokens);
+  const completionTokens = numberFromUsage(usage.completion_tokens ?? usage.completionTokens ?? usage.output_tokens);
+  const totalTokens = numberFromUsage(usage.total_tokens ?? usage.totalTokens) || promptTokens + completionTokens;
+
+  return { promptTokens, completionTokens, totalTokens };
+}
+
+function numberFromUsage(value: unknown): number {
+  const num = Number(value);
+  return Number.isFinite(num) && num >= 0 ? num : 0;
 }
 
 export async function testAIConnection(businessId: string) {
