@@ -662,7 +662,9 @@ function collectTopicScoutSearchHits(input: unknown, bucket: TopicScoutSearchHit
   const record = input as Record<string, unknown>;
   const title = String(record.title ?? record.name ?? "").trim();
   const url = String(record.url ?? record.link ?? "").trim();
-  const snippet = String(record.desc ?? record.snippet ?? record.summary ?? "").trim();
+  const snippet = String(
+    record.desc ?? record.snippet ?? record.summary ?? record.content ?? ""
+  ).trim();
 
   if (title && url) {
     bucket.push({ title, url, snippet });
@@ -1739,17 +1741,27 @@ async function callTopicScoutSearch(query: string, limit = 12) {
     throw new Error("Topic Scout search config belum lengkap di root Settings.");
   }
 
-  const response = await fetch(settings.topicScoutSearchUrl, {
+  const provider = detectTopicScoutSearchProvider(settings.topicScoutSearchUrl);
+  const requestUrl = buildTopicScoutSearchRequestUrl(settings.topicScoutSearchUrl, provider);
+  const requestBody = buildTopicScoutSearchRequestBody({
+    provider,
+    query,
+    limit,
+    apiKey: settings.topicScoutSearchApiKey
+  });
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json"
+  };
+
+  // Tavily expects api_key inside the body, BytePlus uses Authorization header
+  if (provider === "byteplus") {
+    headers.Authorization = `Bearer ${settings.topicScoutSearchApiKey}`;
+  }
+
+  const response = await fetch(requestUrl, {
     method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${settings.topicScoutSearchApiKey}`
-    },
-    body: JSON.stringify({
-      search_type: "Web",
-      format: "JSON",
-      query
-    })
+    headers,
+    body: JSON.stringify(requestBody)
   });
 
   if (!response.ok) {
@@ -1765,6 +1777,64 @@ async function callTopicScoutSearch(query: string, limit = 12) {
   }
 
   return hits;
+}
+
+type TopicScoutSearchProvider = "tavily" | "byteplus";
+
+function detectTopicScoutSearchProvider(url: string): TopicScoutSearchProvider {
+  try {
+    const host = new URL(url).hostname.toLowerCase();
+    if (host.includes("tavily")) {
+      return "tavily";
+    }
+  } catch {
+    // ignore parsing errors and fall through
+  }
+  return "byteplus";
+}
+
+function buildTopicScoutSearchRequestUrl(url: string, provider: TopicScoutSearchProvider) {
+  if (provider !== "tavily") {
+    return url;
+  }
+
+  // Tavily REST endpoint is `/search`. Accept base URL like
+  // `https://api.tavily.com` and append `/search` automatically.
+  try {
+    const parsed = new URL(url);
+    if (!parsed.pathname || parsed.pathname === "/") {
+      parsed.pathname = "/search";
+      return parsed.toString();
+    }
+  } catch {
+    // ignore
+  }
+  return url;
+}
+
+function buildTopicScoutSearchRequestBody(input: {
+  provider: TopicScoutSearchProvider;
+  query: string;
+  limit: number;
+  apiKey: string;
+}) {
+  if (input.provider === "tavily") {
+    return {
+      api_key: input.apiKey,
+      query: input.query,
+      search_depth: "advanced",
+      max_results: Math.max(5, Math.min(input.limit, 20)),
+      include_answer: false,
+      include_raw_content: false,
+      include_images: false
+    };
+  }
+
+  return {
+    search_type: "Web",
+    format: "JSON",
+    query: input.query
+  };
 }
 
 async function callTopicScoutModel(prompt: string) {
