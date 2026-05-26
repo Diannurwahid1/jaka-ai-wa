@@ -1837,6 +1837,35 @@ function buildTopicScoutSearchRequestBody(input: {
   };
 }
 
+type TopicScoutModelMode = "responses" | "chat";
+
+function resolveTopicScoutModelEndpoint(baseUrl: string): { url: string; mode: TopicScoutModelMode } {
+  const trimmed = baseUrl.replace(/\/$/, "");
+
+  // If user already pasted the full path, respect it.
+  if (/\/responses(\?.*)?$/.test(trimmed)) {
+    return { url: trimmed, mode: "responses" };
+  }
+  if (/\/chat\/completions(\?.*)?$/.test(trimmed)) {
+    return { url: trimmed, mode: "chat" };
+  }
+
+  let host = "";
+  try {
+    host = new URL(trimmed).hostname.toLowerCase();
+  } catch {
+    host = "";
+  }
+
+  // BytePlus ARK exposes /responses with the input/content shape.
+  if (host.includes("byteplus") || host.includes("ark")) {
+    return { url: `${trimmed}/responses`, mode: "responses" };
+  }
+
+  // Everything else (Sumopod, OpenAI-compatible, etc.) defaults to chat completions.
+  return { url: `${trimmed}/chat/completions`, mode: "chat" };
+}
+
 async function callTopicScoutModel(prompt: string) {
   const settings = await readSettings(getCreatorId());
 
@@ -1844,14 +1873,16 @@ async function callTopicScoutModel(prompt: string) {
     throw new Error("Topic Scout model config belum lengkap di root Settings.");
   }
 
-  const response = await fetch(`${settings.topicScoutModelBaseUrl.replace(/\/$/, "")}/responses`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${settings.topicScoutModelApiKey}`,
-      "ark-beta-mcp": "true"
-    },
-    body: JSON.stringify({
+  const { url: requestUrl, mode } = resolveTopicScoutModelEndpoint(settings.topicScoutModelBaseUrl);
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+    Authorization: `Bearer ${settings.topicScoutModelApiKey}`
+  };
+
+  let body: Record<string, unknown>;
+  if (mode === "responses") {
+    headers["ark-beta-mcp"] = "true";
+    body = {
       model: settings.topicScoutModel,
       input: [
         {
@@ -1864,7 +1895,31 @@ async function callTopicScoutModel(prompt: string) {
           ]
         }
       ]
-    })
+    };
+  } else {
+    // OpenAI-compatible chat completions (Sumopod, OpenAI, etc.)
+    body = {
+      model: settings.topicScoutModel,
+      messages: [
+        {
+          role: "system",
+          content:
+            "Kamu adalah Brief Strategist untuk konten brand. Balas WAJIB JSON valid tanpa markdown."
+        },
+        {
+          role: "user",
+          content: prompt
+        }
+      ],
+      temperature: 0.6,
+      max_tokens: 2400
+    };
+  }
+
+  const response = await fetch(requestUrl, {
+    method: "POST",
+    headers,
+    body: JSON.stringify(body)
   });
 
   if (!response.ok) {
