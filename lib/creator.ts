@@ -1753,9 +1753,11 @@ async function callTopicScoutSearch(query: string, limit = 12) {
     "Content-Type": "application/json"
   };
 
-  // Tavily expects api_key inside the body, BytePlus uses Authorization header
+  // Tavily expects api_key inside the body, BytePlus uses Authorization header, Serper uses X-API-KEY header
   if (provider === "byteplus") {
     headers.Authorization = `Bearer ${settings.topicScoutSearchApiKey}`;
+  } else if (provider === "serper") {
+    headers["X-API-KEY"] = settings.topicScoutSearchApiKey;
   }
 
   const response = await fetch(requestUrl, {
@@ -1779,13 +1781,16 @@ async function callTopicScoutSearch(query: string, limit = 12) {
   return hits;
 }
 
-type TopicScoutSearchProvider = "tavily" | "byteplus";
+type TopicScoutSearchProvider = "tavily" | "byteplus" | "serper";
 
 function detectTopicScoutSearchProvider(url: string): TopicScoutSearchProvider {
   try {
     const host = new URL(url).hostname.toLowerCase();
     if (host.includes("tavily")) {
       return "tavily";
+    }
+    if (host.includes("serper.dev")) {
+      return "serper";
     }
   } catch {
     // ignore parsing errors and fall through
@@ -1794,20 +1799,18 @@ function detectTopicScoutSearchProvider(url: string): TopicScoutSearchProvider {
 }
 
 function buildTopicScoutSearchRequestUrl(url: string, provider: TopicScoutSearchProvider) {
-  if (provider !== "tavily") {
-    return url;
-  }
-
-  // Tavily REST endpoint is `/search`. Accept base URL like
-  // `https://api.tavily.com` and append `/search` automatically.
-  try {
-    const parsed = new URL(url);
-    if (!parsed.pathname || parsed.pathname === "/") {
-      parsed.pathname = "/search";
-      return parsed.toString();
+  if (provider === "tavily" || provider === "serper") {
+    // Tavily/Serper REST endpoint is `/search`. Accept base URL like
+    // `https://api.tavily.com` or `https://google.serper.dev` and append `/search` automatically.
+    try {
+      const parsed = new URL(url);
+      if (!parsed.pathname || parsed.pathname === "/") {
+        parsed.pathname = "/search";
+        return parsed.toString();
+      }
+    } catch {
+      // ignore
     }
-  } catch {
-    // ignore
   }
   return url;
 }
@@ -1827,6 +1830,12 @@ function buildTopicScoutSearchRequestBody(input: {
       include_answer: false,
       include_raw_content: false,
       include_images: false
+    };
+  }
+  if (input.provider === "serper") {
+    return {
+      q: input.query,
+      num: Math.max(5, Math.min(input.limit, 100))
     };
   }
 

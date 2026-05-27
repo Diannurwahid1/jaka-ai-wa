@@ -909,6 +909,8 @@ export function SettingsClient() {
               <div className="rounded-2xl bg-blue-50 px-4 py-3 text-sm leading-6 text-blue-900">
                 Provider auto-detect berdasarkan host. Untuk <span className="font-medium">Tavily</span> isi URL{" "}
                 <span className="font-medium">https://api.tavily.com</span> dan API key <span className="font-medium">tvly-...</span>.
+                Untuk <span className="font-medium">Serper</span> isi URL{" "}
+                <span className="font-medium">https://google.serper.dev</span> dan API key dari Serper.
                 Untuk <span className="font-medium">BytePlus InfoQuest</span> pakai{" "}
                 <span className="font-medium">https://search.infoquest.bytepluses.com</span> dengan bearer key bawaan.
               </div>
