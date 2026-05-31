@@ -2562,13 +2562,47 @@ export async function listCreatorDrafts(platformInput?: string, limit = 20) {
   return documents.map(mapDraft);
 }
 
+async function getCreatorDraftStats(platform: CreatorPlatform) {
+  const { drafts } = await getCollections();
+  const statusCounts = await drafts
+    .aggregate<{ _id: CreatorDraft["status"]; count: number }>([
+      {
+        $match: {
+          creatorId: getCreatorId(),
+          platform
+        }
+      },
+      {
+        $group: {
+          _id: "$status",
+          count: { $sum: 1 }
+        }
+      }
+    ])
+    .toArray();
+  const countByStatus = new Map(statusCounts.map((item) => [item._id, item.count]));
+  const count = (status: CreatorDraft["status"]) => countByStatus.get(status) ?? 0;
+
+  return {
+    totalDrafts: statusCounts.reduce((total, item) => total + item.count, 0),
+    draft: count("draft"),
+    pendingApproval: count("pending_approval"),
+    approved: count("approved"),
+    scheduled: count("scheduled"),
+    rejected: count("rejected"),
+    posted: count("posted"),
+    failed: count("failed")
+  };
+}
+
 export async function getCreatorOverview(platformInput?: string): Promise<CreatorOverview> {
   const platform = normalizePlatform(platformInput);
-  const [profile, drafts, publishLogs, topicBriefs] = await Promise.all([
+  const [profile, drafts, publishLogs, topicBriefs, stats] = await Promise.all([
     getCreatorProfile(platform),
     listCreatorDrafts(platform, 200),
     listCreatorPublishLogs(platform, 10),
-    listCreatorTopicBriefs(platform, { limit: 200 })
+    listCreatorTopicBriefs(platform, { limit: 200 }),
+    getCreatorDraftStats(platform)
   ]);
 
   return {
@@ -2576,14 +2610,7 @@ export async function getCreatorOverview(platformInput?: string): Promise<Creato
     profile,
     drafts,
     topicBriefs,
-    stats: {
-      totalDrafts: drafts.length,
-      pendingApproval: drafts.filter((draft) => draft.status === "pending_approval").length,
-      scheduled: drafts.filter((draft) => draft.status === "scheduled").length,
-      rejected: drafts.filter((draft) => draft.status === "rejected").length,
-      posted: drafts.filter((draft) => draft.status === "posted").length,
-      failed: drafts.filter((draft) => draft.status === "failed").length
-    },
+    stats,
     publishLogs,
     commandHelp: [
       "/approve TH-123",
@@ -3429,7 +3456,7 @@ export async function approveAllCreatorDrafts(platform: CreatorPlatform) {
     .find({
       creatorId: getCreatorId(),
       platform,
-      status: "draft"
+      status: { $in: ["draft", "pending_approval"] }
     })
     .sort({ createdAt: 1, _id: 1 })
     .toArray();
@@ -3439,7 +3466,7 @@ export async function approveAllCreatorDrafts(platform: CreatorPlatform) {
       platform,
       approvedCount: 0,
       drafts: [] as CreatorDraft[],
-      reply: `Tidak ada draft ${getPlatformMeta(platform).label} dengan status draft.`
+      reply: `Tidak ada draft ${getPlatformMeta(platform).label} yang menunggu approval.`
     };
   }
 

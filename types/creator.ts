@@ -209,7 +209,9 @@ export type CreatorOverview = {
   platform: CreatorPlatform;
   stats: {
     totalDrafts: number;
+    draft: number;
     pendingApproval: number;
+    approved: number;
     scheduled: number;
     rejected: number;
     posted: number;

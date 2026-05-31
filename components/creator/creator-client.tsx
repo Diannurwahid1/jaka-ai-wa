@@ -677,7 +677,10 @@ export function CreatorClient({ platform }: { platform: CreatorPlatform }) {
   });
   const displayedDrafts = draftLimit === "all" ? sortedDrafts : sortedDrafts.slice((draftPage - 1) * draftLimit, draftPage * draftLimit);
   const totalDraftPages = draftLimit === "all" ? 1 : Math.ceil(sortedDrafts.length / draftLimit);
-  const draftItemsReadyToApprove = overview?.drafts.filter((draft) => draft.status === "draft") || [];
+  const loadedDraftItemsReadyToApprove = overview?.drafts.filter((draft) => draft.status === "draft" || draft.status === "pending_approval") || [];
+  const draftItemsReadyToApproveCount = overview ? overview.stats.draft + overview.stats.pendingApproval : loadedDraftItemsReadyToApprove.length;
+  const showApproveAllDraftsButton =
+    draftItemsReadyToApproveCount > 0 || draftStatusFilter === "draft" || draftStatusFilter === "pending_approval";
 
   async function handleApproveAllDrafts() {
     setBusyId("approve-all-drafts");
@@ -1108,14 +1111,14 @@ export function CreatorClient({ platform }: { platform: CreatorPlatform }) {
                 <div className="flex flex-wrap items-center justify-between gap-4">
                   <h3 className="text-lg font-semibold text-slate-950">Draft Queue</h3>
                   <div className="flex items-center gap-2">
-                    {draftItemsReadyToApprove.length > 0 ? (
+                    {showApproveAllDraftsButton ? (
                       <button
                         type="button"
-                        disabled={busyId === "approve-all-drafts"}
+                        disabled={busyId === "approve-all-drafts" || draftItemsReadyToApproveCount === 0}
                         onClick={() => void handleApproveAllDrafts()}
                         className="rounded-full bg-slate-950 px-4 py-2 text-xs font-medium text-white disabled:opacity-60"
                       >
-                        Approve All Draft ({draftItemsReadyToApprove.length})
+                        Approve All Draft ({draftItemsReadyToApproveCount})
                       </button>
                     ) : null}
                     <select value={draftStatusFilter} onChange={(e) => { setDraftStatusFilter(e.target.value); setDraftPage(1); }} className="rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs text-slate-700">
