@@ -163,6 +163,21 @@ function ensureThreadsConfig(settings: AppSettings) {
   };
 }
 
+function resolveThreadsOAuthAppConfig(settings: AppSettings) {
+  const clientId = settings.threadsAppId.trim() || process.env.THREADS_APP_ID?.trim() || settings.metaAppId.trim();
+  const clientSecret =
+    settings.threadsAppSecret.trim() || process.env.THREADS_APP_SECRET?.trim() || settings.metaAppSecret.trim();
+
+  if (!clientId || !clientSecret) {
+    throw new Error("Threads OAuth app config belum lengkap. Isi Threads App ID dan Threads App Secret di Settings.");
+  }
+
+  return {
+    clientId,
+    clientSecret
+  };
+}
+
 async function fetchJsonOrThrow<T>(url: string, init?: RequestInit) {
   const response = await fetch(url, init);
   const raw = await response.text();
@@ -638,6 +653,77 @@ export async function getLinkedInAuthorizationUrl(businessId: string) {
   url.searchParams.set("state", `wa-ai-${Date.now()}`);
 
   return url.toString();
+}
+
+export async function getThreadsAuthorizationUrl(businessId: string, redirectUri: string) {
+  const settings = await readSettings(businessId);
+  const config = resolveThreadsOAuthAppConfig(settings);
+  const url = new URL("https://threads.net/oauth/authorize");
+  url.searchParams.set("client_id", config.clientId);
+  url.searchParams.set("redirect_uri", redirectUri.trim());
+  url.searchParams.set("scope", "threads_basic,threads_content_publish");
+  url.searchParams.set("response_type", "code");
+  return url.toString();
+}
+
+export async function exchangeThreadsAuthorizationCode(businessId: string, code: string, redirectUri: string) {
+  const settings = await readSettings(businessId);
+  const config = resolveThreadsOAuthAppConfig(settings);
+
+  const payload = new URLSearchParams({
+    client_id: config.clientId,
+    client_secret: config.clientSecret,
+    grant_type: "authorization_code",
+    redirect_uri: redirectUri.trim(),
+    code: code.trim()
+  });
+
+  const tokenData = await fetchJsonOrThrow<{
+    access_token?: string;
+    user_id?: string | number;
+  }>("https://graph.threads.net/oauth/access_token", {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: payload.toString(),
+    signal: AbortSignal.timeout(30000)
+  });
+
+  const accessToken = String(tokenData.access_token ?? "").trim();
+  const userIdFromExchange = String(tokenData.user_id ?? "").trim();
+
+  if (!accessToken) {
+    throw new Error("Threads OAuth tidak mengembalikan access token.");
+  }
+
+  const profile = await fetchJsonOrThrow<{
+    id?: string | number;
+    username?: string;
+  }>(`https://graph.threads.net/v1.0/me?fields=id,username&access_token=${encodeURIComponent(accessToken)}`, {
+    signal: AbortSignal.timeout(30000)
+  });
+
+  const userId = String(profile.id ?? userIdFromExchange ?? "").trim();
+  const username = String(profile.username ?? "").trim();
+
+  if (!userId || !username) {
+    throw new Error("Threads OAuth berhasil, tetapi profil pengguna tidak lengkap.");
+  }
+
+  await writeSettings(
+    {
+      threadsUserId: userId,
+      threadsUsername: username,
+      threadsAccessToken: accessToken,
+      threadsTokenExpiresAt: toIsoExpiry(3600)
+    },
+    businessId
+  );
+
+  return {
+    userId,
+    username,
+    accessToken
+  };
 }
 
 export async function exchangeLinkedInAuthorizationCode(businessId: string, code: string) {

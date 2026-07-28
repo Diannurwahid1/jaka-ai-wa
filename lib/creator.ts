@@ -3,7 +3,7 @@ import { ObjectId } from "mongodb";
 import { postChatCompletion } from "@/lib/ai-client";
 import { currentBusinessId, runInBusinessContext } from "@/lib/business-context";
 import { getBusinessProfileById } from "@/lib/business";
-import { generateBytePlusImage, hasBytePlusImageConfig } from "@/lib/byteplus";
+import { generateConfiguredImage, hasImageGenerationConfig } from "@/lib/image-generation";
 import { getMongoDatabase } from "@/lib/mongodb";
 import { persistGeneratedImageToR2 } from "@/lib/r2";
 import { readSettings } from "@/lib/settings";
@@ -338,6 +338,21 @@ const platformMeta: Record<CreatorPlatform, PlatformMeta> = {
 
 function now() {
   return new Date();
+}
+
+function isMongoConnectivityError(error: unknown) {
+  if (!(error instanceof Error)) {
+    return false;
+  }
+
+  const text = `${error.name} ${error.message}`.toLowerCase();
+  return (
+    text.includes("mongoserverselectionerror") ||
+    text.includes("mongonetworkerror") ||
+    text.includes("econnreset") ||
+    text.includes("replicasetnoprimary") ||
+    text.includes("mongodb configuration is incomplete")
+  );
 }
 
 function serializeError(error: unknown) {
@@ -1432,8 +1447,18 @@ async function listAllCreatorProfiles() {
 }
 
 async function buildStyleMemorySummary(platform: CreatorPlatform, limit = 10) {
-  const { approvalLogs } = await getCollections();
-  const logs = await approvalLogs.find({ platform, action: { $ne: "send" } }).sort({ createdAt: -1 }).limit(limit).toArray();
+  let logs: CreatorApprovalLogDocument[] = [];
+
+  try {
+    const { approvalLogs } = await getCollections();
+    logs = await approvalLogs.find({ platform, action: { $ne: "send" } }).sort({ createdAt: -1 }).limit(limit).toArray();
+  } catch (error) {
+    if (!isMongoConnectivityError(error)) {
+      throw error;
+    }
+
+    return "Belum ada histori approval. Utamakan hook kuat, sudut yang jelas, dan tone creator yang natural.";
+  }
 
   if (logs.length === 0) {
     return "Belum ada histori approval. Utamakan hook kuat, sudut yang jelas, dan tone creator yang natural.";
@@ -2267,12 +2292,12 @@ async function generateVisualIfNeeded(
     };
   }
 
-  if (!(await hasBytePlusImageConfig(getCreatorId()))) {
+  if (!(await hasImageGenerationConfig(getCreatorId()))) {
     return {
       imageUrl: undefined as string | undefined,
       r2ImageUrl: undefined as string | undefined,
       imageProvider: undefined as string | undefined,
-      imageError: "BytePlus belum dikonfigurasi di root Settings."
+      imageError: "Image provider belum dikonfigurasi di root Settings."
     };
   }
 
@@ -2282,16 +2307,16 @@ async function generateVisualIfNeeded(
     `${draft.topic}. ${draft.caption}. Buat visual social media yang premium, relevan, dan stop-scroll untuk ${getPlatformMeta(platform).label}.`;
 
   try {
-    const imageUrl = await generateBytePlusImage(getCreatorId(), {
+    const generated = await generateConfiguredImage(getCreatorId(), {
       prompt: visualPrompt,
       size: aspectRatioToImageSize(profile.imageAspectRatio)
     });
-    const persistedImage = await persistGeneratedImageToR2(getCreatorId(), imageUrl);
+    const persistedImage = await persistGeneratedImageToR2(getCreatorId(), generated.imageUrl);
 
     return {
-      imageUrl,
+      imageUrl: generated.imageUrl,
       r2ImageUrl: persistedImage.url,
-      imageProvider: "byteplus",
+      imageProvider: generated.provider,
       imageError: undefined as string | undefined
     };
   } catch (error) {
@@ -2304,8 +2329,8 @@ async function generateVisualIfNeeded(
     return {
       imageUrl: undefined as string | undefined,
       r2ImageUrl: undefined as string | undefined,
-      imageProvider: "byteplus",
-      imageError: error instanceof Error ? error.message : "BytePlus image generation failed."
+      imageProvider: undefined as string | undefined,
+      imageError: error instanceof Error ? error.message : "Image generation failed."
     };
   }
 }
@@ -2487,7 +2512,40 @@ export function listCreatorPlatforms() {
 
 export async function getCreatorProfile(platformInput?: string) {
   const platform = normalizePlatform(platformInput);
-  return mapProfile(await ensureProfileDocument(platform));
+  try {
+    return mapProfile(await ensureProfileDocument(platform));
+  } catch (error) {
+    if (!isMongoConnectivityError(error)) {
+      throw error;
+    }
+
+    const fallback = await defaultProfileValues(platform);
+    const timestamp = now().toISOString();
+
+    return {
+      id: `${fallback.creatorId}-${platform}-fallback`,
+      creatorId: fallback.creatorId,
+      platform,
+      name: fallback.name,
+      niche: fallback.niche,
+      brandSummary: fallback.brandSummary,
+      audience: fallback.audience,
+      objective: fallback.objective,
+      approvalPhone: fallback.approvalPhone,
+      defaultRole: fallback.defaultRole,
+      defaultTone: fallback.defaultTone,
+      postsPerDay: fallback.postsPerDay,
+      planningDays: fallback.planningDays,
+      scheduleSlots: fallback.scheduleSlots,
+      autoGenerateDrafts: fallback.autoGenerateDrafts,
+      draftScheduleSlots: fallback.draftScheduleSlots,
+      generateImages: fallback.generateImages,
+      imageModel: fallback.imageModel,
+      imageAspectRatio: fallback.imageAspectRatio,
+      createdAt: timestamp,
+      updatedAt: timestamp
+    };
+  }
 }
 
 export async function updateCreatorProfile(platformInput: string | undefined, input: Partial<CreatorProfile>) {
@@ -2597,30 +2655,94 @@ async function getCreatorDraftStats(platform: CreatorPlatform) {
 
 export async function getCreatorOverview(platformInput?: string): Promise<CreatorOverview> {
   const platform = normalizePlatform(platformInput);
-  const [profile, drafts, publishLogs, topicBriefs, stats] = await Promise.all([
-    getCreatorProfile(platform),
-    listCreatorDrafts(platform, 200),
-    listCreatorPublishLogs(platform, 10),
-    listCreatorTopicBriefs(platform, { limit: 200 }),
-    getCreatorDraftStats(platform)
-  ]);
 
-  return {
-    platform,
-    profile,
-    drafts,
-    topicBriefs,
-    stats,
-    publishLogs,
-    commandHelp: [
-      "/approve TH-123",
-      "/reject IG-123",
-      "/regen LI-123 hook lebih tajam",
-      "/edit FB-123 buat lebih singkat",
-      "/scout instagram tren hotel terbaru",
-      "/topics instagram"
-    ]
-  };
+  try {
+    const [profile, drafts, publishLogs, topicBriefs, stats] = await Promise.all([
+      getCreatorProfile(platform),
+      listCreatorDrafts(platform, 200),
+      listCreatorPublishLogs(platform, 10),
+      listCreatorTopicBriefs(platform, { limit: 200 }),
+      getCreatorDraftStats(platform)
+    ]);
+
+    return {
+      platform,
+      profile,
+      drafts,
+      topicBriefs,
+      stats,
+      publishLogs,
+      commandHelp: [
+        "/approve TH-123",
+        "/reject IG-123",
+        "/regen LI-123 hook lebih tajam",
+        "/edit FB-123 buat lebih singkat",
+        "/scout instagram tren hotel terbaru",
+        "/topics instagram"
+      ]
+    };
+  } catch (error) {
+    if (!isMongoConnectivityError(error)) {
+      throw error;
+    }
+
+    console.error("[creator.overview] Falling back to empty overview due to Mongo connectivity issue", {
+      platform,
+      businessId: getCreatorId(),
+      error: serializeError(error)
+    });
+
+    const fallback = await defaultProfileValues(platform);
+    const fallbackProfile: CreatorProfile = {
+      id: `${fallback.creatorId}-${platform}-fallback`,
+      creatorId: fallback.creatorId,
+      platform,
+      name: fallback.name,
+      niche: fallback.niche,
+      brandSummary: fallback.brandSummary,
+      audience: fallback.audience,
+      objective: fallback.objective,
+      approvalPhone: fallback.approvalPhone,
+      defaultRole: fallback.defaultRole,
+      defaultTone: fallback.defaultTone,
+      postsPerDay: fallback.postsPerDay,
+      planningDays: fallback.planningDays,
+      scheduleSlots: fallback.scheduleSlots,
+      autoGenerateDrafts: fallback.autoGenerateDrafts,
+      draftScheduleSlots: fallback.draftScheduleSlots,
+      generateImages: fallback.generateImages,
+      imageModel: fallback.imageModel,
+      imageAspectRatio: fallback.imageAspectRatio,
+      createdAt: now().toISOString(),
+      updatedAt: now().toISOString()
+    };
+
+    return {
+      platform,
+      profile: fallbackProfile,
+      drafts: [],
+      topicBriefs: [],
+      stats: {
+        totalDrafts: 0,
+        draft: 0,
+        pendingApproval: 0,
+        approved: 0,
+        scheduled: 0,
+        rejected: 0,
+        posted: 0,
+        failed: 0
+      },
+      publishLogs: [],
+      commandHelp: [
+        "/approve TH-123",
+        "/reject IG-123",
+        "/regen LI-123 hook lebih tajam",
+        "/edit FB-123 buat lebih singkat",
+        "/scout instagram tren hotel terbaru",
+        "/topics instagram"
+      ]
+    };
+  }
 }
 
 export async function simulateCreatorDrafts(input?: {
@@ -2665,16 +2787,45 @@ export async function simulateCreatorDrafts(input?: {
     const parsed = parseJsonPayload(raw) as { drafts?: GeneratedDraftSeed[] };
     generatedDrafts.push(...(Array.isArray(parsed.drafts) ? parsed.drafts.slice(0, count) : []));
   } else {
-    const topicBriefs = await ensureTopicBriefPool(platform, profile, count);
+    try {
+      const topicBriefs = await ensureTopicBriefPool(platform, profile, count);
 
-    for (const topicBrief of topicBriefs) {
+      for (const topicBrief of topicBriefs) {
+        const raw = await callCreatorModel(
+          buildPlatformPrompt({
+            platform,
+            profile,
+            styleMemory,
+            count: 1,
+            topic: buildDraftTopicInstruction(mapTopicBrief(topicBrief)),
+            role,
+            tone,
+            objective,
+            seoKeywordInstruction
+          })
+        );
+        const parsed = parseJsonPayload(raw) as { drafts?: GeneratedDraftSeed[] };
+        const firstDraft = Array.isArray(parsed.drafts) ? parsed.drafts[0] : undefined;
+
+        if (firstDraft) {
+          generatedDrafts.push(firstDraft);
+          topicReferences.push(topicBrief.topic);
+        }
+      }
+    } catch (error) {
+      if (!isMongoConnectivityError(error)) {
+        throw error;
+      }
+
+      const fallbackTopic =
+        `${profile.name} ${profile.niche || "AI tools"} campaign for ${meta.label}`.trim();
       const raw = await callCreatorModel(
         buildPlatformPrompt({
           platform,
           profile,
           styleMemory,
-          count: 1,
-          topic: buildDraftTopicInstruction(mapTopicBrief(topicBrief)),
+          count,
+          topic: fallbackTopic,
           role,
           tone,
           objective,
@@ -2682,12 +2833,8 @@ export async function simulateCreatorDrafts(input?: {
         })
       );
       const parsed = parseJsonPayload(raw) as { drafts?: GeneratedDraftSeed[] };
-      const firstDraft = Array.isArray(parsed.drafts) ? parsed.drafts[0] : undefined;
-
-      if (firstDraft) {
-        generatedDrafts.push(firstDraft);
-        topicReferences.push(topicBrief.topic);
-      }
+      generatedDrafts.push(...(Array.isArray(parsed.drafts) ? parsed.drafts.slice(0, count) : []));
+      topicReferences.push(fallbackTopic);
     }
   }
 

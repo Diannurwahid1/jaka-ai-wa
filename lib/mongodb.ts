@@ -1,4 +1,4 @@
-import { Db, MongoClient } from "mongodb";
+import { Db, MongoClient, MongoClientOptions } from "mongodb";
 
 import { readSettings } from "@/lib/settings";
 
@@ -16,6 +16,21 @@ declare global {
 const cache = globalThis.mongoClientCacheGlobal ?? new Map<string, MongoCacheEntry>();
 if (!globalThis.mongoClientCacheGlobal) {
   globalThis.mongoClientCacheGlobal = cache;
+}
+
+function readMongoNumberEnv(name: string, fallback: number) {
+  const value = Number(process.env[name] ?? "");
+  return Number.isFinite(value) && value > 0 ? value : fallback;
+}
+
+export function getMongoClientOptions(): MongoClientOptions {
+  return {
+    serverSelectionTimeoutMS: readMongoNumberEnv("MONGODB_SERVER_SELECTION_TIMEOUT_MS", 60000),
+    connectTimeoutMS: readMongoNumberEnv("MONGODB_CONNECT_TIMEOUT_MS", 30000),
+    socketTimeoutMS: readMongoNumberEnv("MONGODB_SOCKET_TIMEOUT_MS", 120000),
+    maxIdleTimeMS: readMongoNumberEnv("MONGODB_MAX_IDLE_TIME_MS", 60000),
+    retryWrites: true
+  };
 }
 
 export async function getMongoDatabase(businessId: string): Promise<Db> {
@@ -36,7 +51,7 @@ export async function getMongoDatabase(businessId: string): Promise<Db> {
     cache.set(businessId, {
       uri,
       dbName,
-      client: new MongoClient(uri)
+      client: new MongoClient(uri, getMongoClientOptions())
     });
   }
 

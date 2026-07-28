@@ -1,0 +1,2 @@
+ALTER TABLE "AppConfig"
+  ADD COLUMN IF NOT EXISTS "imageProvider" TEXT NOT NULL DEFAULT 'byteplus';

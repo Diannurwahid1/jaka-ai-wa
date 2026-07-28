@@ -123,6 +123,28 @@ BEGIN
   IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='AppConfig' AND column_name='seoKeywordList') THEN
     ALTER TABLE "AppConfig" ADD COLUMN "seoKeywordList" TEXT NOT NULL DEFAULT '';
   END IF;
+  -- Threads Scout
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='AppConfig' AND column_name='threadsScoutEnabled') THEN
+    ALTER TABLE "AppConfig" ADD COLUMN "threadsScoutEnabled" BOOLEAN NOT NULL DEFAULT false;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='AppConfig' AND column_name='threadsScoutKeywords') THEN
+    ALTER TABLE "AppConfig" ADD COLUMN "threadsScoutKeywords" TEXT NOT NULL DEFAULT '';
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='AppConfig' AND column_name='threadsScoutPersona') THEN
+    ALTER TABLE "AppConfig" ADD COLUMN "threadsScoutPersona" TEXT NOT NULL DEFAULT '';
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='AppConfig' AND column_name='threadsScoutSellAngle') THEN
+    ALTER TABLE "AppConfig" ADD COLUMN "threadsScoutSellAngle" TEXT NOT NULL DEFAULT '';
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='AppConfig' AND column_name='threadsScoutLimitPerKeyword') THEN
+    ALTER TABLE "AppConfig" ADD COLUMN "threadsScoutLimitPerKeyword" TEXT NOT NULL DEFAULT '20';
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='AppConfig' AND column_name='threadsScoutMaxRepliesPerRun') THEN
+    ALTER TABLE "AppConfig" ADD COLUMN "threadsScoutMaxRepliesPerRun" TEXT NOT NULL DEFAULT '5';
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='AppConfig' AND column_name='threadsScoutRepliedIds') THEN
+    ALTER TABLE "AppConfig" ADD COLUMN "threadsScoutRepliedIds" TEXT NOT NULL DEFAULT '';
+  END IF;
 END $$;
 
 COMMIT;

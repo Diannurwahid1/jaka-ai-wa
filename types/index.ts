@@ -34,6 +34,7 @@ export type AppSettings = {
   embeddingModel: string;
   embeddingDimensions: string;
   embeddingBaseUrl: string;
+  imageProvider: string;
   bytePlusApiKey: string;
   bytePlusBaseUrl: string;
   bytePlusImageModel: string;
@@ -57,6 +58,8 @@ export type AppSettings = {
   metaInstagramUsername: string;
   metaPageAccessToken: string;
   metaPageTokenExpiresAt: string;
+  threadsAppId: string;
+  threadsAppSecret: string;
   threadsUserId: string;
   threadsUsername: string;
   threadsAccessToken: string;
@@ -76,6 +79,13 @@ export type AppSettings = {
   schedulerSecret: string;
   seoKeywordEnabled: boolean;
   seoKeywordList: string;
+  // Threads Scout — keyword scraping + auto reply
+  threadsScoutEnabled: boolean;
+  threadsScoutKeywords: string;
+  threadsScoutPersona: string;
+  threadsScoutSellAngle: string;
+  threadsScoutLimitPerKeyword: string;
+  threadsScoutMaxRepliesPerRun: string;
 };
 
 export type DashboardOverview = {

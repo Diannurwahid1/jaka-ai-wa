@@ -24,6 +24,8 @@ model Business {
   memorySessions MemorySession[]
   memoryMessages MemoryMessage[]
   webhookEvents  WebhookEvent[]
+  blastTemplates BlastTemplate[]
+  blastCampaigns BlastCampaign[]
 
   @@index([isDefault])
 }
@@ -51,6 +53,7 @@ model AppConfig {
   embeddingModel      String
   embeddingDimensions String
   embeddingBaseUrl    String
+  imageProvider       String   @default("byteplus")
   bytePlusApiKey      String   @default("")
   bytePlusBaseUrl     String   @default("https://ark.ap-southeast.bytepluses.com/api/v3")
   bytePlusImageModel  String   @default("seedream-4-5-251128")
@@ -70,13 +73,15 @@ model AppConfig {
   metaGraphVersion    String   @default("v23.0")
   metaFacebookPageId  String   @default("")
   metaFacebookPageName String  @default("")
-  metaInstagramBusinessId String @default("")
-  metaInstagramUsername String @default("")
-  metaPageAccessToken String   @default("")
-  metaPageTokenExpiresAt String @default("")
-  threadsUserId        String   @default("")
-  threadsUsername      String   @default("")
-  threadsAccessToken   String   @default("")
+    metaInstagramBusinessId String @default("")
+    metaInstagramUsername String @default("")
+    metaPageAccessToken String   @default("")
+    metaPageTokenExpiresAt String @default("")
+    threadsAppId        String   @default("")
+    threadsAppSecret    String   @default("")
+    threadsUserId        String   @default("")
+    threadsUsername      String   @default("")
+    threadsAccessToken   String   @default("")
   threadsTokenExpiresAt String  @default("")
   threadsApiVersion    String   @default("v1.0")
   threadsApiBaseUrl    String   @default("https://graph.threads.net")
@@ -93,6 +98,14 @@ model AppConfig {
   schedulerSecret     String   @default("")
   seoKeywordEnabled   Boolean  @default(true)
   seoKeywordList      String   @default("") @db.Text
+  // Threads Scout
+  threadsScoutEnabled          Boolean  @default(false)
+  threadsScoutKeywords         String   @default("") @db.Text
+  threadsScoutPersona          String   @default("") @db.Text
+  threadsScoutSellAngle        String   @default("") @db.Text
+  threadsScoutLimitPerKeyword  String   @default("20")
+  threadsScoutMaxRepliesPerRun String   @default("5")
+  threadsScoutRepliedIds       String   @default("") @db.Text
   createdAt           DateTime @default(now())
   updatedAt           DateTime @updatedAt
 
@@ -170,4 +183,84 @@ model WebhookEvent {
 
   @@index([businessId, createdAt])
   @@index([businessId, stage])
+}
+
+// --- Auto Blast Feature ---
+
+model BlastTemplate {
+  id          String   @id @default(uuid())
+  businessId  String
+  business    Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  name        String
+  text        String   @db.Text
+  imageUrl    String   @default("")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  campaignItems BlastCampaignItem[]
+
+  @@index([businessId])
+}
+
+model BlastCampaign {
+  id              String   @id @default(uuid())
+  businessId      String
+  business        Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  name            String
+  status          String   @default("draft") // draft | active | paused | completed
+  targetType      String   @default("whatsapp_group") // whatsapp_group | whatsapp_individual | social
+  socialPlatforms String[] @default([]) // threads, instagram, facebook, linkedin
+  intervalMinutes Int      @default(60) // delay between template sequence items
+  startAt         DateTime?
+  endDate         DateTime?   // auto-stop campaign after this date
+  nextRunAt       DateTime?
+  lastRunAt       DateTime?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  targets       BlastCampaignTarget[]
+  items         BlastCampaignItem[]
+  executionLogs BlastExecutionLog[]
+
+  @@index([businessId, status])
+}
+
+model BlastCampaignTarget {
+  id         String       @id @default(uuid())
+  campaignId String
+  campaign   BlastCampaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  targetId   String       // WA group ID (628xxx@g.us) or phone number
+  label      String       @default("") // friendly name for the target
+
+  @@index([campaignId])
+}
+
+model BlastCampaignItem {
+  id         String        @id @default(uuid())
+  campaignId String
+  campaign   BlastCampaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  templateId String
+  template   BlastTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
+  sortOrder  Int           @default(0) // execution order
+  delayAfterMinutes Int    @default(0) // delay after previous item (0 = run immediately in sequence)
+
+  @@index([campaignId, sortOrder])
+}
+
+model BlastExecutionLog {
+  id         String        @id @default(uuid())
+  campaignId String
+  campaign   BlastCampaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  itemId     String?
+  targetId   String?
+  templateId String?
+  targetLabel String       @default("")
+  platform   String        @default("whatsapp") // whatsapp | threads | instagram | facebook | linkedin
+  status     String        @default("pending") // pending | success | failed
+  message    String?       @db.Text
+  error      String?       @db.Text
+  createdAt  DateTime      @default(now())
+
+  @@index([campaignId, createdAt])
+  @@index([campaignId, status])
 }

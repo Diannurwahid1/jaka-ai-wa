@@ -23,6 +23,7 @@ const items = [
   },
   { href: "/ai-chat", label: "AI Chat", icon: ChatIcon, tourId: "nav-ai-chat" },
   { href: "/wa-monitor", label: "WA Monitor", icon: MonitorIcon, tourId: "nav-wa-monitor" },
+  { href: "/blast", label: "Auto Blast", icon: MonitorIcon, tourId: "nav-blast" },
   { href: "/knowledge-base", label: "Knowledge", icon: KnowledgeIcon, tourId: "nav-knowledge" },
   { href: "/settings", label: "Settings", icon: SettingsIcon, tourId: "nav-settings" }
 ];

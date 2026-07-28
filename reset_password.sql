@@ -1,0 +1,1 @@
+ALTER USER porto_user WITH PASSWORD 'PasswordKuat123!';

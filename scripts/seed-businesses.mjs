@@ -41,11 +41,32 @@ Jika tidak tahu (terapis tersedia, ETA pasti):
 Jika ditanya harga:
 -> kirim daftar paket, lalu ajak booking dengan menyebut area dan jam.`;
 
+const zyhoStorePrompt = `Kamu adalah AI WhatsApp untuk Zyho Store.
+
+Tugas kamu:
+- Menjawab pertanyaan tentang produk AI digital, benefit tiap produk, cara akses, dan rekomendasi sesuai kebutuhan user.
+- Membantu calon pembeli memilih tools AI yang paling relevan untuk kuliah, kerja, coding, desain, riset, dan content creation.
+- Menangani pertanyaan seputar pembelian, lisensi, onboarding, dan langkah setelah checkout.
+
+Style:
+- Cerdas, premium, singkat, dan yakin, tapi tetap ramah.
+- Bahasa Indonesia profesional santai, mudah dipahami non-teknis.
+- Fokus pada use case nyata, hasil, dan efisiensi kerja.
+
+Jika tidak tahu detail stok, masa aktif, atau promo terbaru:
+-> jelaskan secara umum lalu arahkan ke admin untuk verifikasi cepat.
+
+Jika ditanya produk yang cocok:
+-> gali kebutuhan user dulu (mahasiswa, developer, kreator, profesional), lalu beri 2-3 rekomendasi paling relevan beserta manfaat utamanya.`;
+
 const pilotGymTopicQuery =
   "tren gym indonesia 2026 personal trainer member retention transformasi tubuh kelas grup fitness coaching wellness";
 
 const klikPijatTopicQuery =
   "tren pijat panggilan indonesia 2026 layanan terapis on-demand wellness home spa relaxation booking online";
+
+const zyhoStoreTopicQuery =
+  "tren ai tools 2026 produktivitas mahasiswa developer kreator profesional automation writing coding design research digital tools";
 
 // Light per-brand SEO keyword starters. Admin bisa edit dari halaman Settings.
 const pilotGymSeoKeywords = [
@@ -78,6 +99,21 @@ const klikPijatSeoKeywords = [
   '"pijat 24 jam"'
 ].join("\n");
 
+const zyhoStoreSeoKeywords = [
+  '"zyho store"',
+  '"ai tools indonesia"',
+  '"tools ai untuk mahasiswa"',
+  '"tools ai untuk developer"',
+  '"tools ai untuk content creator"',
+  '"tools ai untuk kerja"',
+  '"produk ai digital"',
+  '"langganan ai murah"',
+  '"alat ai produktivitas"',
+  '"ai untuk riset"',
+  '"ai untuk coding"',
+  '"ai untuk desain"'
+].join("\n");
+
 const businesses = [
   {
     slug: "pilot-gym",
@@ -103,7 +139,24 @@ const businesses = [
     promptSystem: klikPijatPrompt,
     topicScoutDefaultQuery: klikPijatTopicQuery,
     seoKeywordList: klikPijatSeoKeywords,
+    brandVisualStyle:
+      "Luxury photorealistic lifestyle campaign. Real human subject in premium wellness context. Clean commercial lighting, polished skin tones, warm-neutral palette, elegant spa atmosphere, soft shadows, premium textures, editorial framing, calm and trustworthy mood. Minimal layout with strong focus on the subject, refined typography area, and no clutter.",
     admin: { email: "admin@klikpijat.local", password: "Admin12345!" }
+  },
+  {
+    slug: "zyho-store",
+    name: "Zyho Store",
+    niche: "Produk AI digital untuk mahasiswa, developer, kreator, dan profesional yang ingin kerja lebih cepat dengan tools AI terkurasi",
+    brandSummary:
+      "Zyho Store adalah hub produk AI digital yang membantu mahasiswa, developer, kreator, dan profesional menemukan tools AI yang tepat untuk belajar, membuat, menulis, riset, coding, dan produktivitas kerja.",
+    audience:
+      "Mahasiswa, developer, kreator, freelancer, dan profesional yang butuh tools AI praktis, terpercaya, dan relevan dengan workflow harian mereka.",
+    promptSystem: zyhoStorePrompt,
+    topicScoutDefaultQuery: zyhoStoreTopicQuery,
+    seoKeywordList: zyhoStoreSeoKeywords,
+    brandVisualStyle:
+      "Ultra-premium monochrome editorial campaign. Real human subject only, wearing an impeccable black suit or smart minimalist fashion, posed with quiet authority. Signature concept: surreal laptop-head character with a sleek black screen and subtle abstract mark, inspired by futuristic brand leadership, but no readable logo or brand name inside the image. High-key studio background in clean white to soft gray gradient, sharp softbox lighting, deep black wardrobe contrast, luxury product-ad atmosphere, gallery-grade composition, negative space, minimal props, precise posture, and polished cinematic realism. Overall mood: elite, modern, intelligent, exclusive, and highly curated. Typography area should feel premium and bold, suitable for AI tools brand campaigns.",
+    admin: { email: "admin@zyhostore.local", password: "Admin12345!" }
   }
 ];
 
@@ -186,16 +239,16 @@ try {
       console.log(`Business "${b.name}" already exists (id=${businessId}). Updating profile fields.`);
       await client.query(
         `update "Business"
-         set "name" = $2, "niche" = $3, "brandSummary" = $4, "audience" = $5, "updatedAt" = NOW()
+         set "name" = $2, "niche" = $3, "brandSummary" = $4, "audience" = $5, "brandVisualStyle" = $6, "updatedAt" = NOW()
          where "id" = $1`,
-        [businessId, b.name, b.niche, b.brandSummary, b.audience]
+        [businessId, b.name, b.niche, b.brandSummary, b.audience, b.brandVisualStyle ?? ""]
       );
     } else {
       businessId = randomUUID();
       await client.query(
-        `insert into "Business" ("id", "slug", "name", "niche", "brandSummary", "audience", "isDefault", "createdAt", "updatedAt")
-         values ($1, $2, $3, $4, $5, $6, false, NOW(), NOW())`,
-        [businessId, b.slug, b.name, b.niche, b.brandSummary, b.audience]
+        `insert into "Business" ("id", "slug", "name", "niche", "brandSummary", "audience", "brandVisualStyle", "isDefault", "createdAt", "updatedAt")
+         values ($1, $2, $3, $4, $5, $6, $7, false, NOW(), NOW())`,
+        [businessId, b.slug, b.name, b.niche, b.brandSummary, b.audience, b.brandVisualStyle ?? ""]
       );
       console.log(`Created Business "${b.name}" (id=${businessId})`);
     }

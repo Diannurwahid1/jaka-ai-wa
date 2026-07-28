@@ -222,7 +222,7 @@ function buildFlowStages(overview: CreatorOverview, platform: CreatorPlatform) {
       state: isImagePlatform && overview.profile.generateImages ? "ready" : isImagePlatform ? "idle" : "optional",
       detail: isImagePlatform
         ? overview.profile.generateImages
-          ? `BytePlus aktif, rasio ${overview.profile.imageAspectRatio}`
+          ? `Image generator aktif, rasio ${overview.profile.imageAspectRatio}`
           : "Generate image dimatikan di profile"
         : "Tidak diperlukan"
     },
@@ -311,6 +311,26 @@ export function CreatorClient({ platform }: { platform: CreatorPlatform }) {
     query: "",
     limit: "20"
   });
+
+  // Threads Scout state
+  const [scoutForm, setScoutForm] = useState({
+    keyword: "",
+    limit: "20",
+    maxReplies: "5",
+    persona: "",
+    sellAngle: ""
+  });
+  const [scoutResults, setScoutResults] = useState<Array<{
+    postId: string;
+    username: string;
+    postText: string;
+    reply: string;
+    replyId?: string;
+    skipped?: boolean;
+    skipReason?: string;
+    error?: string;
+  }> | null>(null);
+  const [scoutMeta, setScoutMeta] = useState<{ keyword: string; found: number; replied: number; skipped: number; errors: number; dryRun: boolean } | null>(null);
 
   const [topicPage, setTopicPage] = useState(1);
   const [topicLimit, setTopicLimit] = useState<number | "all">(5);
@@ -657,6 +677,46 @@ export function CreatorClient({ platform }: { platform: CreatorPlatform }) {
     }
   }
 
+  async function handleThreadsScout(dryRun: boolean) {
+    const keyword = scoutForm.keyword.trim();
+    if (!keyword) {
+      pushToast({ title: "Keyword wajib diisi.", tone: "error" });
+      return;
+    }
+    setBusyId(dryRun ? "scout-sim" : "scout-run");
+    setScoutResults(null);
+    setScoutMeta(null);
+    try {
+      const response = await fetch("/api/social/threads/scout", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          keyword,
+          limit: Number(scoutForm.limit) || 20,
+          maxReplies: Number(scoutForm.maxReplies) || 5,
+          dryRun,
+          persona: scoutForm.persona || undefined,
+          sellAngle: scoutForm.sellAngle || undefined
+        })
+      });
+      const payload = await response.json();
+      if (!response.ok || !payload.ok) throw new Error(payload.reason || "Scout gagal");
+      const result = payload.result as { keyword: string; found: number; replied: number; skipped: number; errors: number; results: Array<{ postId: string; username: string; postText: string; reply: string; replyId?: string; skipped?: boolean; skipReason?: string; error?: string }> };
+      setScoutResults(result.results ?? []);
+      setScoutMeta({ keyword: result.keyword, found: result.found, replied: result.replied, skipped: result.skipped, errors: result.errors, dryRun });
+      pushToast({
+        title: dryRun
+          ? `Simulasi selesai. ${result.found} post ditemukan, ${result.replied} reply di-generate.`
+          : `Scout selesai. ${result.replied} reply berhasil diposting.`,
+        tone: "success"
+      });
+    } catch (error) {
+      pushToast({ title: error instanceof Error ? error.message : "Scout gagal", tone: "error" });
+    } finally {
+      setBusyId(null);
+    }
+  }
+
   const flowStages = overview ? buildFlowStages(overview, platform) : [];
 
   const filteredTopics = overview?.topicBriefs.filter((t) => topicStatusFilter === "all" || t.status === topicStatusFilter) || [];
@@ -856,10 +916,10 @@ export function CreatorClient({ platform }: { platform: CreatorPlatform }) {
                   <>
                     <label className="flex items-center gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">
                       <input type="checkbox" checked={profileForm.generateImages} onChange={(event) => setProfileForm((current) => ({ ...current, generateImages: event.target.checked }))} />
-                      Generate image dengan BytePlus
+                      Generate image dengan provider aktif
                     </label>
                     <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
-                      Model gambar mengikuti root Settings pada field <span className="font-medium text-slate-900">BytePlus Image Model</span> dan harus memakai model image BytePlus seperti Seedream atau SeedEdit.
+                      Model gambar mengikuti root Settings pada field <span className="font-medium text-slate-900">Image Model</span>. Jika provider aktif BytePlus, gunakan model image seperti Seedream atau SeedEdit. Jika provider aktif NaraRouter, gunakan model seperti <span className="font-medium text-slate-900">gpt-image-2</span>.
                     </div>
                     <select value={profileForm.imageAspectRatio} onChange={(event) => setProfileForm((current) => ({ ...current, imageAspectRatio: event.target.value as "1:1" | "4:5" | "16:9" }))} className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900">
                       <option value="1:1">1:1</option>
@@ -1234,6 +1294,211 @@ export function CreatorClient({ platform }: { platform: CreatorPlatform }) {
               ))}
             </div>
           </div>
+
+          {/* ── Threads Scout Panel — only on Threads platform ── */}
+          {platform === "threads" ? (
+            <div className={sectionClassName}>
+              <div className="flex flex-wrap items-start justify-between gap-4">
+                <div>
+                  <h3 className="text-lg font-semibold text-slate-950">Threads Scout — Auto Reply</h3>
+                  <p className="mt-1 text-sm text-slate-500">
+                    Cari postingan Threads berdasarkan keyword, generate reply natural pakai AI, lalu posting langsung. Simulasi dulu sebelum jalankan beneran.
+                  </p>
+                </div>
+                <div className="rounded-full border border-violet-200 bg-violet-50 px-4 py-2 text-xs font-semibold uppercase tracking-[0.18em] text-violet-600">
+                  Threads Only
+                </div>
+              </div>
+
+              <div className="mt-6 grid gap-6 xl:grid-cols-[1fr_1fr]">
+                {/* Form */}
+                <div className="space-y-4">
+                  <div>
+                    <label className="mb-2 block text-sm font-medium text-slate-700">Keyword</label>
+                    <input
+                      value={scoutForm.keyword}
+                      onChange={(e) => setScoutForm((c) => ({ ...c, keyword: e.target.value }))}
+                      placeholder="contoh: gpt plus, chatgpt, ai tools"
+                      className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900"
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="mb-2 block text-sm font-medium text-slate-700">Limit Post</label>
+                      <input
+                        value={scoutForm.limit}
+                        onChange={(e) => setScoutForm((c) => ({ ...c, limit: e.target.value }))}
+                        placeholder="20"
+                        className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900"
+                      />
+                    </div>
+                    <div>
+                      <label className="mb-2 block text-sm font-medium text-slate-700">Max Reply</label>
+                      <input
+                        value={scoutForm.maxReplies}
+                        onChange={(e) => setScoutForm((c) => ({ ...c, maxReplies: e.target.value }))}
+                        placeholder="5"
+                        className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900"
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="mb-2 block text-sm font-medium text-slate-700">
+                      Persona AI <span className="font-normal text-slate-400">(opsional)</span>
+                    </label>
+                    <textarea
+                      value={scoutForm.persona}
+                      onChange={(e) => setScoutForm((c) => ({ ...c, persona: e.target.value }))}
+                      rows={3}
+                      placeholder="Kamu orang biasa yang suka teknologi. Gaya santai, pakai gw/lo/bgt. Jangan keliatan jualan."
+                      className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm leading-6 text-slate-900"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="mb-2 block text-sm font-medium text-slate-700">
+                      Sell Angle <span className="font-normal text-slate-400">(opsional, selipkan natural)</span>
+                    </label>
+                    <textarea
+                      value={scoutForm.sellAngle}
+                      onChange={(e) => setScoutForm((c) => ({ ...c, sellAngle: e.target.value }))}
+                      rows={3}
+                      placeholder="Kami punya layanan AI WhatsApp untuk bisnis. Auto-reply 24 jam, mulai 299rb/bulan."
+                      className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm leading-6 text-slate-900"
+                    />
+                  </div>
+
+                  <div className="flex gap-3">
+                    <button
+                      type="button"
+                      disabled={busyId === "scout-sim" || busyId === "scout-run"}
+                      onClick={() => void handleThreadsScout(true)}
+                      className="flex-1 rounded-2xl border border-violet-200 bg-violet-50 px-4 py-3 text-sm font-medium text-violet-700 transition hover:border-violet-400 disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                      {busyId === "scout-sim" ? "Mensimulasikan..." : "🔍 Simulasi (Dry Run)"}
+                    </button>
+                    <button
+                      type="button"
+                      disabled={busyId === "scout-sim" || busyId === "scout-run"}
+                      onClick={() => void handleThreadsScout(false)}
+                      className="flex-1 rounded-2xl bg-slate-950 px-4 py-3 text-sm font-medium text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                      {busyId === "scout-run" ? "Menjalankan..." : "🚀 Jalankan Sekarang"}
+                    </button>
+                  </div>
+
+                  <div className="rounded-2xl bg-slate-50 px-4 py-3 text-sm leading-6 text-slate-500">
+                    <span className="font-medium text-slate-700">Simulasi</span> — generate reply AI tapi tidak posting ke Threads. Cocok untuk preview sebelum live.
+                    <br />
+                    <span className="font-medium text-slate-700">Jalankan</span> — scrape + generate + posting reply langsung. Post yang sudah direply tidak akan diulang.
+                  </div>
+                </div>
+
+                {/* Results */}
+                <div>
+                  {scoutMeta ? (
+                    <div className="mb-4 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+                      <div className="flex flex-wrap items-center gap-3">
+                        <span className="rounded-full bg-slate-200 px-3 py-1 text-xs font-semibold text-slate-700">
+                          {scoutMeta.dryRun ? "DRY RUN" : "LIVE"}
+                        </span>
+                        <span className="text-sm text-slate-600">
+                          Keyword: <span className="font-medium text-slate-900">{scoutMeta.keyword}</span>
+                        </span>
+                      </div>
+                      <div className="mt-3 grid grid-cols-4 gap-2 text-center">
+                        <div className="rounded-xl bg-white px-2 py-2">
+                          <p className="text-lg font-semibold text-slate-950">{scoutMeta.found}</p>
+                          <p className="text-[10px] uppercase tracking-wide text-slate-400">Ditemukan</p>
+                        </div>
+                        <div className="rounded-xl bg-white px-2 py-2">
+                          <p className="text-lg font-semibold text-emerald-600">{scoutMeta.replied}</p>
+                          <p className="text-[10px] uppercase tracking-wide text-slate-400">Reply</p>
+                        </div>
+                        <div className="rounded-xl bg-white px-2 py-2">
+                          <p className="text-lg font-semibold text-slate-400">{scoutMeta.skipped}</p>
+                          <p className="text-[10px] uppercase tracking-wide text-slate-400">Skip</p>
+                        </div>
+                        <div className="rounded-xl bg-white px-2 py-2">
+                          <p className="text-lg font-semibold text-rose-500">{scoutMeta.errors}</p>
+                          <p className="text-[10px] uppercase tracking-wide text-slate-400">Error</p>
+                        </div>
+                      </div>
+                    </div>
+                  ) : null}
+
+                  <div className="space-y-3">
+                    {scoutResults === null ? (
+                      <div className="rounded-3xl bg-slate-50 px-4 py-8 text-center text-sm text-slate-400">
+                        Hasil simulasi atau run akan muncul di sini.
+                      </div>
+                    ) : scoutResults.length === 0 ? (
+                      <div className="rounded-3xl bg-slate-50 px-4 py-8 text-center text-sm text-slate-400">
+                        Tidak ada post yang ditemukan untuk keyword ini.
+                      </div>
+                    ) : (
+                      scoutResults.map((item, index) => (
+                        <div
+                          key={item.postId || index}
+                          className={`rounded-3xl border p-4 ${
+                            item.error
+                              ? "border-rose-200 bg-rose-50"
+                              : item.skipped
+                                ? "border-slate-100 bg-slate-50/60 opacity-60"
+                                : "border-emerald-100 bg-emerald-50/40"
+                          }`}
+                        >
+                          <div className="flex items-start justify-between gap-3">
+                            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">
+                              @{item.username}
+                            </p>
+                            {item.skipped ? (
+                              <span className="rounded-full bg-slate-200 px-2 py-0.5 text-[10px] font-semibold text-slate-500">
+                                SKIP · {item.skipReason}
+                              </span>
+                            ) : item.error ? (
+                              <span className="rounded-full bg-rose-200 px-2 py-0.5 text-[10px] font-semibold text-rose-600">
+                                ERROR
+                              </span>
+                            ) : item.replyId ? (
+                              <span className="rounded-full bg-emerald-200 px-2 py-0.5 text-[10px] font-semibold text-emerald-700">
+                                POSTED · {item.replyId}
+                              </span>
+                            ) : (
+                              <span className="rounded-full bg-violet-200 px-2 py-0.5 text-[10px] font-semibold text-violet-700">
+                                SIMULATED
+                              </span>
+                            )}
+                          </div>
+
+                          {/* Original post */}
+                          <div className="mt-2 rounded-2xl bg-white/80 px-3 py-2 text-sm leading-6 text-slate-600">
+                            <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400 mb-1">Post asli</p>
+                            {item.postText.slice(0, 200)}{item.postText.length > 200 ? "..." : ""}
+                          </div>
+
+                          {/* AI Reply */}
+                          {item.reply ? (
+                            <div className="mt-2 rounded-2xl bg-white px-3 py-2 text-sm leading-6 text-slate-800">
+                              <p className="text-[10px] font-semibold uppercase tracking-wide text-emerald-500 mb-1">Reply AI</p>
+                              {item.reply}
+                            </div>
+                          ) : null}
+
+                          {/* Error */}
+                          {item.error ? (
+                            <p className="mt-2 text-sm leading-6 text-rose-600">{item.error}</p>
+                          ) : null}
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
+          ) : null}
         </div>
       )}
     </div>

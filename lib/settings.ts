@@ -1,5 +1,5 @@
 import { AppSettings } from "@/types";
-import { prisma } from "@/lib/prisma";
+import { prisma, prismaSupportsAppConfigField } from "@/lib/prisma";
 import { ensureDefaultBusiness } from "@/lib/business";
 import { getCurrentSession } from "@/lib/auth";
 
@@ -80,6 +80,21 @@ const defaultSeoKeywordList = `"citra digital hotel"
 "sistem hotel"
 "sistem manajemen hotel"`;
 
+function normalizeImageProvider(value?: string) {
+  const normalized = value?.trim().toLowerCase();
+  return normalized === "nararouter" ? "nararouter" : "byteplus";
+}
+
+function filterUnsupportedAppConfigFields<T extends Record<string, unknown>>(value: T): T {
+  if (prismaSupportsAppConfigField("imageProvider")) {
+    return value;
+  }
+
+  const copy = { ...value };
+  delete (copy as Record<string, unknown>).imageProvider;
+  return copy;
+}
+
 const fallbackSettings: AppSettings = {
   aiAutoReplyEnabled: (process.env.AI_AUTO_REPLY_ENABLED ?? "true").trim().toLowerCase() !== "false",
   creatorGenerationEnabled: (process.env.CREATOR_GENERATION_ENABLED ?? "true").trim().toLowerCase() !== "false",
@@ -100,6 +115,7 @@ const fallbackSettings: AppSettings = {
   embeddingModel: process.env.EMBEDDING_MODEL ?? "voyage-4-large",
   embeddingDimensions: process.env.EMBEDDING_DIMENSIONS ?? "1024",
   embeddingBaseUrl: process.env.EMBEDDING_BASE_URL ?? "https://ai.mongodb.com/v1",
+  imageProvider: normalizeImageProvider(process.env.IMAGE_PROVIDER),
   bytePlusApiKey: process.env.ARK_API_KEY ?? "",
   bytePlusBaseUrl: process.env.ARK_BASE_URL ?? "https://ark.ap-southeast.bytepluses.com/api/v3",
   bytePlusImageModel: process.env.ARK_IMAGE_MODEL ?? "seedream-4-5-251128",
@@ -124,13 +140,15 @@ const fallbackSettings: AppSettings = {
   metaGraphVersion: process.env.META_GRAPH_VERSION ?? "v23.0",
   metaFacebookPageId: process.env.META_FACEBOOK_PAGE_ID ?? "",
   metaFacebookPageName: process.env.META_FACEBOOK_PAGE_NAME ?? "",
-  metaInstagramBusinessId: process.env.META_INSTAGRAM_BUSINESS_ID ?? "",
-  metaInstagramUsername: process.env.META_INSTAGRAM_USERNAME ?? "",
-  metaPageAccessToken: process.env.META_PAGE_ACCESS_TOKEN ?? "",
-  metaPageTokenExpiresAt: process.env.META_PAGE_TOKEN_EXPIRES_AT ?? "",
-  threadsUserId: process.env.THREADS_USER_ID ?? "",
-  threadsUsername: process.env.THREADS_USERNAME ?? "",
-  threadsAccessToken: process.env.THREADS_ACCESS_TOKEN ?? "",
+    metaInstagramBusinessId: process.env.META_INSTAGRAM_BUSINESS_ID ?? "",
+    metaInstagramUsername: process.env.META_INSTAGRAM_USERNAME ?? "",
+    metaPageAccessToken: process.env.META_PAGE_ACCESS_TOKEN ?? "",
+    metaPageTokenExpiresAt: process.env.META_PAGE_TOKEN_EXPIRES_AT ?? "",
+    threadsAppId: "",
+    threadsAppSecret: "",
+    threadsUserId: process.env.THREADS_USER_ID ?? "",
+    threadsUsername: process.env.THREADS_USERNAME ?? "",
+    threadsAccessToken: process.env.THREADS_ACCESS_TOKEN ?? "",
   threadsTokenExpiresAt: process.env.THREADS_TOKEN_EXPIRES_AT ?? "",
   threadsApiVersion: process.env.THREADS_API_VERSION ?? "v1.0",
   threadsApiBaseUrl: process.env.THREADS_API_BASE_URL ?? "https://graph.threads.net",
@@ -146,7 +164,14 @@ const fallbackSettings: AppSettings = {
   autoPostEnabled: (process.env.AUTO_POST_ENABLED ?? "").trim().toLowerCase() === "true",
   schedulerSecret: process.env.SCHEDULER_SECRET ?? "",
   seoKeywordEnabled: (process.env.SEO_KEYWORD_ENABLED ?? "true").trim().toLowerCase() !== "false",
-  seoKeywordList: process.env.SEO_KEYWORD_LIST ?? defaultSeoKeywordList
+  seoKeywordList: process.env.SEO_KEYWORD_LIST ?? defaultSeoKeywordList,
+  // Threads Scout
+  threadsScoutEnabled: (process.env.THREADS_SCOUT_ENABLED ?? "").trim().toLowerCase() === "true",
+  threadsScoutKeywords: process.env.THREADS_SCOUT_KEYWORDS ?? "",
+  threadsScoutPersona: process.env.THREADS_SCOUT_PERSONA ?? "",
+  threadsScoutSellAngle: process.env.THREADS_SCOUT_SELL_ANGLE ?? "",
+  threadsScoutLimitPerKeyword: process.env.THREADS_SCOUT_LIMIT_PER_KEYWORD ?? "20",
+  threadsScoutMaxRepliesPerRun: process.env.THREADS_SCOUT_MAX_REPLIES_PER_RUN ?? "5"
 };
 
 function sanitizeSettings(input: Partial<AppSettings>, current: AppSettings): AppSettings {
@@ -180,6 +205,7 @@ function sanitizeSettings(input: Partial<AppSettings>, current: AppSettings): Ap
     embeddingModel: input.embeddingModel?.trim() ?? current.embeddingModel,
     embeddingDimensions: input.embeddingDimensions?.trim() ?? current.embeddingDimensions,
     embeddingBaseUrl: input.embeddingBaseUrl?.trim() ?? current.embeddingBaseUrl,
+    imageProvider: normalizeImageProvider(input.imageProvider ?? current.imageProvider),
     bytePlusApiKey: input.bytePlusApiKey?.trim() ?? current.bytePlusApiKey,
     bytePlusBaseUrl: input.bytePlusBaseUrl?.trim() ?? current.bytePlusBaseUrl,
     bytePlusImageModel: nextBytePlusImageModel,
@@ -199,13 +225,15 @@ function sanitizeSettings(input: Partial<AppSettings>, current: AppSettings): Ap
     metaGraphVersion: nextMetaGraphVersion || fallbackSettings.metaGraphVersion,
     metaFacebookPageId: input.metaFacebookPageId?.trim() ?? current.metaFacebookPageId,
     metaFacebookPageName: input.metaFacebookPageName?.trim() ?? current.metaFacebookPageName,
-    metaInstagramBusinessId: input.metaInstagramBusinessId?.trim() ?? current.metaInstagramBusinessId,
-    metaInstagramUsername: input.metaInstagramUsername?.trim() ?? current.metaInstagramUsername,
-    metaPageAccessToken: input.metaPageAccessToken?.trim() ?? current.metaPageAccessToken,
-    metaPageTokenExpiresAt: input.metaPageTokenExpiresAt?.trim() ?? current.metaPageTokenExpiresAt,
-    threadsUserId: input.threadsUserId?.trim() ?? current.threadsUserId,
-    threadsUsername: input.threadsUsername?.trim() ?? current.threadsUsername,
-    threadsAccessToken: input.threadsAccessToken?.trim() ?? current.threadsAccessToken,
+      metaInstagramBusinessId: input.metaInstagramBusinessId?.trim() ?? current.metaInstagramBusinessId,
+      metaInstagramUsername: input.metaInstagramUsername?.trim() ?? current.metaInstagramUsername,
+      metaPageAccessToken: input.metaPageAccessToken?.trim() ?? current.metaPageAccessToken,
+      metaPageTokenExpiresAt: input.metaPageTokenExpiresAt?.trim() ?? current.metaPageTokenExpiresAt,
+      threadsAppId: input.threadsAppId?.trim() ?? current.threadsAppId,
+      threadsAppSecret: input.threadsAppSecret?.trim() ?? current.threadsAppSecret,
+      threadsUserId: input.threadsUserId?.trim() ?? current.threadsUserId,
+      threadsUsername: input.threadsUsername?.trim() ?? current.threadsUsername,
+      threadsAccessToken: input.threadsAccessToken?.trim() ?? current.threadsAccessToken,
     threadsTokenExpiresAt: input.threadsTokenExpiresAt?.trim() ?? current.threadsTokenExpiresAt,
     threadsApiVersion: nextThreadsApiVersion || fallbackSettings.threadsApiVersion,
     threadsApiBaseUrl: nextThreadsApiBaseUrl || fallbackSettings.threadsApiBaseUrl,
@@ -221,18 +249,28 @@ function sanitizeSettings(input: Partial<AppSettings>, current: AppSettings): Ap
     autoPostEnabled: typeof input.autoPostEnabled === "boolean" ? input.autoPostEnabled : current.autoPostEnabled,
     schedulerSecret: input.schedulerSecret?.trim() ?? current.schedulerSecret,
     seoKeywordEnabled: typeof input.seoKeywordEnabled === "boolean" ? input.seoKeywordEnabled : current.seoKeywordEnabled,
-    seoKeywordList: input.seoKeywordList?.trim() ?? current.seoKeywordList
+    seoKeywordList: input.seoKeywordList?.trim() ?? current.seoKeywordList,
+    // Threads Scout
+    threadsScoutEnabled:
+      typeof input.threadsScoutEnabled === "boolean" ? input.threadsScoutEnabled : current.threadsScoutEnabled,
+    threadsScoutKeywords: input.threadsScoutKeywords?.trim() ?? current.threadsScoutKeywords,
+    threadsScoutPersona: input.threadsScoutPersona?.trim() ?? current.threadsScoutPersona,
+    threadsScoutSellAngle: input.threadsScoutSellAngle?.trim() ?? current.threadsScoutSellAngle,
+    threadsScoutLimitPerKeyword: input.threadsScoutLimitPerKeyword?.trim() ?? current.threadsScoutLimitPerKeyword,
+    threadsScoutMaxRepliesPerRun: input.threadsScoutMaxRepliesPerRun?.trim() ?? current.threadsScoutMaxRepliesPerRun
   };
 }
 
 async function ensureConfigRow(businessId: string) {
+  const createData = filterUnsupportedAppConfigFields({
+    businessId,
+    ...fallbackSettings
+  });
+
   return prisma.appConfig.upsert({
     where: { businessId },
     update: {},
-    create: {
-      businessId,
-      ...fallbackSettings
-    }
+    create: createData
   });
 }
 
@@ -265,13 +303,14 @@ export async function writeSettings(input: Partial<AppSettings>, businessId?: st
   const resolvedId = await resolveBusinessId(businessId);
   const current = await readSettings(resolvedId);
   const nextValue = sanitizeSettings(input, current);
+  const persistedValue = filterUnsupportedAppConfigFields(nextValue);
 
   const updated = await prisma.appConfig.upsert({
     where: { businessId: resolvedId },
-    update: nextValue,
+    update: persistedValue,
     create: {
       businessId: resolvedId,
-      ...nextValue
+      ...persistedValue
     }
   });
 

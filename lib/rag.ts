@@ -4,6 +4,7 @@ import { MongoClient } from "mongodb";
 import MongoRAG, { MongoRAGSearchResult } from "mongodb-rag";
 
 import { postChatCompletion } from "@/lib/ai-client";
+import { getMongoClientOptions } from "@/lib/mongodb";
 import { readSettings } from "@/lib/settings";
 
 type KnowledgeInput = {
@@ -202,7 +203,7 @@ async function ensureClients(businessId: string) {
     ragClientCache.delete(businessId);
   }
 
-  const client = new MongoClient(config.mongoUrl);
+  const client = new MongoClient(config.mongoUrl, getMongoClientOptions());
   const mongoClientPromise = client.connect().then(() => client);
 
   const ragClientPromise = usesMongoRagProvider(config.embedding.provider)

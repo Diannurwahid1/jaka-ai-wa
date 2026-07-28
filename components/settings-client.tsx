@@ -27,6 +27,7 @@ const initialSettings: AppSettings = {
   embeddingModel: "voyage-4-large",
   embeddingDimensions: "1024",
   embeddingBaseUrl: "https://ai.mongodb.com/v1",
+  imageProvider: "byteplus",
   bytePlusApiKey: "",
   bytePlusBaseUrl: "https://ark.ap-southeast.bytepluses.com/api/v3",
   bytePlusImageModel: "seedream-4-5-251128",
@@ -50,6 +51,8 @@ const initialSettings: AppSettings = {
   metaInstagramUsername: "",
   metaPageAccessToken: "",
   metaPageTokenExpiresAt: "",
+  threadsAppId: "",
+  threadsAppSecret: "",
   threadsUserId: "",
   threadsUsername: "",
   threadsAccessToken: "",
@@ -68,7 +71,14 @@ const initialSettings: AppSettings = {
   autoPostEnabled: false,
   schedulerSecret: "",
   seoKeywordEnabled: true,
-  seoKeywordList: ""
+  seoKeywordList: "",
+  // Threads Scout
+  threadsScoutEnabled: false,
+  threadsScoutKeywords: "",
+  threadsScoutPersona: "",
+  threadsScoutSellAngle: "",
+  threadsScoutLimitPerKeyword: "20",
+  threadsScoutMaxRepliesPerRun: "5"
 };
 
 const voyageDimensionMap: Record<string, number[]> = {
@@ -121,6 +131,35 @@ function InputField({
         placeholder={placeholder}
         className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900"
       />
+    </label>
+  );
+}
+
+function SelectField({
+  label,
+  value,
+  onChange,
+  options
+}: {
+  label: string;
+  value: string;
+  onChange: (nextValue: string) => void;
+  options: Array<{ label: string; value: string }>;
+}) {
+  return (
+    <label className="space-y-2">
+      <span className="text-sm font-medium text-slate-700">{label}</span>
+      <select
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900"
+      >
+        {options.map((option) => (
+          <option key={option.value} value={option.value}>
+            {option.label}
+          </option>
+        ))}
+      </select>
     </label>
   );
 }
@@ -638,10 +677,38 @@ export function SettingsClient() {
           <section data-tour="settings-ai" className="rounded-[32px] border border-slate-200/60 bg-white p-6 shadow-panel">
             <div className="mb-5">
               <h3 className="text-lg font-semibold text-slate-950">AI Config</h3>
-              <p className="mt-1 text-sm text-slate-500">Sumopod endpoint, API key, model, dan prompt system.</p>
+              <p className="mt-1 text-sm text-slate-500">Provider AI utama untuk chat/completions, API key, model, dan prompt system.</p>
             </div>
 
             <div className="space-y-4">
+              <div className="flex flex-wrap gap-3">
+                <button
+                  type="button"
+                  onClick={() =>
+                    setSettings((current) => ({
+                      ...current,
+                      aiApiUrl: "https://ai.sumopod.com/v1/chat/completions",
+                      aiModel: current.aiModel.trim() || "seed-2-0-pro"
+                    }))
+                  }
+                  className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-2 text-sm font-medium text-slate-800 transition hover:border-slate-950 hover:text-slate-950"
+                >
+                  Pakai preset Sumopod
+                </button>
+                <button
+                  type="button"
+                  onClick={() =>
+                    setSettings((current) => ({
+                      ...current,
+                      aiApiUrl: "https://router.bynara.id/v1/chat/completions",
+                      aiModel: current.aiModel.trim() || "gpt-4.1-mini"
+                    }))
+                  }
+                  className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-2 text-sm font-medium text-slate-800 transition hover:border-slate-950 hover:text-slate-950"
+                >
+                  Pakai preset NaraRouter
+                </button>
+              </div>
               <CheckboxField
                 label="Aktifkan AI Auto Reply WA"
                 checked={settings.aiAutoReplyEnabled}
@@ -680,6 +747,11 @@ export function SettingsClient() {
                   placeholder="Masukkan prompt AI utama untuk customer service."
                 />
               </label>
+              <div className="rounded-2xl bg-slate-50 px-4 py-3 text-sm leading-6 text-slate-600">
+                Untuk <span className="font-medium text-slate-900">NaraRouter</span>, isi endpoint OpenAI-compatible seperti{" "}
+                <span className="font-medium text-slate-900">https://router.bynara.id/v1/chat/completions</span>,
+                masukkan API key Nara, lalu pilih model chat yang tersedia di akun Anda.
+              </div>
             </div>
           </section>
 
@@ -850,37 +922,90 @@ export function SettingsClient() {
 
           <section className="rounded-[32px] border border-slate-200/60 bg-white p-6 shadow-panel">
             <div className="mb-5">
-              <h3 className="text-lg font-semibold text-slate-950">BytePlus Config</h3>
+              <h3 className="text-lg font-semibold text-slate-950">Image Generation Config</h3>
               <p className="mt-1 text-sm text-slate-500">
-                Dipakai oleh Jaka Creator untuk image generation Instagram, LinkedIn, dan Facebook. Field ini harus berisi model image BytePlus seperti Seedream atau SeedEdit, bukan model response/chat seperti seed-2.
+                Dipakai oleh Jaka Creator untuk image generation Instagram, LinkedIn, dan Facebook. Saat ini mendukung BytePlus dan NaraRouter.
               </p>
             </div>
 
             <div className="space-y-4">
+              <div className="flex flex-wrap gap-3">
+                <button
+                  type="button"
+                  onClick={() =>
+                    setSettings((current) => ({
+                      ...current,
+                      imageProvider: "byteplus",
+                      bytePlusBaseUrl: "https://ark.ap-southeast.bytepluses.com/api/v3",
+                      bytePlusImageModel: current.bytePlusImageModel.trim() || "seedream-4-5-251128"
+                    }))
+                  }
+                  className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-2 text-sm font-medium text-slate-800 transition hover:border-slate-950 hover:text-slate-950"
+                >
+                  Preset BytePlus
+                </button>
+                <button
+                  type="button"
+                  onClick={() =>
+                    setSettings((current) => ({
+                      ...current,
+                      imageProvider: "nararouter",
+                      bytePlusBaseUrl: "https://api-images.bynara.id/v1",
+                      bytePlusImageModel: "gpt-image-2"
+                    }))
+                  }
+                  className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-2 text-sm font-medium text-slate-800 transition hover:border-slate-950 hover:text-slate-950"
+                >
+                  Preset NaraRouter
+                </button>
+              </div>
+              <SelectField
+                label="Image Provider"
+                value={settings.imageProvider}
+                onChange={(nextValue) => setSettings((current) => ({ ...current, imageProvider: nextValue }))}
+                options={[
+                  { label: "BytePlus", value: "byteplus" },
+                  { label: "NaraRouter", value: "nararouter" }
+                ]}
+              />
               <InputField
-                label="BytePlus API Key"
+                label={settings.imageProvider === "nararouter" ? "NaraRouter API Key" : "BytePlus API Key"}
                 value={settings.bytePlusApiKey}
                 onChange={(nextValue) => setSettings((current) => ({ ...current, bytePlusApiKey: nextValue }))}
-                placeholder="ARK API key"
+                placeholder={settings.imageProvider === "nararouter" ? "Nara API key" : "ARK API key"}
                 type="password"
               />
               <InputField
-                label="BytePlus Base URL"
+                label={settings.imageProvider === "nararouter" ? "NaraRouter Base URL" : "BytePlus Base URL"}
                 value={settings.bytePlusBaseUrl}
                 onChange={(nextValue) => setSettings((current) => ({ ...current, bytePlusBaseUrl: nextValue }))}
-                placeholder="https://ark.ap-southeast.bytepluses.com/api/v3"
+                placeholder={
+                  settings.imageProvider === "nararouter"
+                    ? "https://api-images.bynara.id/v1"
+                    : "https://ark.ap-southeast.bytepluses.com/api/v3"
+                }
               />
               <InputField
-                label="BytePlus Image Model"
+                label={settings.imageProvider === "nararouter" ? "NaraRouter Image Model" : "BytePlus Image Model"}
                 value={settings.bytePlusImageModel}
                 onChange={(nextValue) => setSettings((current) => ({ ...current, bytePlusImageModel: nextValue }))}
-                placeholder="seedream-4-5-251128"
+                placeholder={settings.imageProvider === "nararouter" ? "gpt-image-2" : "seedream-4-5-251128"}
               />
-              <div className="rounded-2xl bg-amber-50 px-4 py-3 text-sm leading-6 text-amber-900">
-                Contoh valid untuk image generation: <span className="font-medium">seedream-4-5-251128</span> atau{" "}
-                <span className="font-medium">seededit-3-0-i2i-250628</span>. Model seperti{" "}
-                <span className="font-medium">seed-2-0-pro-260328</span> hanya cocok untuk responses/chat dan akan ditolak oleh endpoint gambar.
-              </div>
+              {settings.imageProvider === "nararouter" ? (
+                <div className="rounded-2xl bg-blue-50 px-4 py-3 text-sm leading-6 text-blue-900">
+                  NaraRouter image akan memanggil endpoint <span className="font-medium">/images/generations</span> dengan{" "}
+                  <span className="font-medium">response_format=b64_json</span>. Default model yang dipasang adalah{" "}
+                  <span className="font-medium">gpt-image-2</span>. Size yang didukung provider ini hanya{" "}
+                  <span className="font-medium">1024x1024</span>, <span className="font-medium">2048x2048</span>, atau{" "}
+                  <span className="font-medium">3840x2160</span>, jadi rasio seperti Instagram 4:5 akan otomatis dipetakan ke size square terdekat.
+                </div>
+              ) : (
+                <div className="rounded-2xl bg-amber-50 px-4 py-3 text-sm leading-6 text-amber-900">
+                  Contoh valid untuk BytePlus image generation: <span className="font-medium">seedream-4-5-251128</span> atau{" "}
+                  <span className="font-medium">seededit-3-0-i2i-250628</span>. Model seperti{" "}
+                  <span className="font-medium">seed-2-0-pro-260328</span> hanya cocok untuk responses/chat dan akan ditolak oleh endpoint gambar.
+                </div>
+              )}
             </div>
           </section>
 
@@ -936,7 +1061,7 @@ export function SettingsClient() {
               <div className="rounded-2xl bg-slate-50 px-4 py-3 text-sm leading-6 text-slate-600">
                 Ringkasnya: <span className="font-medium text-slate-900">Search API</span> untuk ambil hasil web terbaru,{" "}
                 <span className="font-medium text-slate-900">Scout Model API</span> untuk chat/responses yang merangkum hasil tadi,
-                dan <span className="font-medium text-slate-900">BytePlus Config</span> di atas tetap khusus image generation.
+                dan <span className="font-medium text-slate-900">Image Generation Config</span> di atas tetap khusus image generation.
               </div>
               <label className="space-y-2">
                 <span className="text-sm font-medium text-slate-700">Default Query</span>
@@ -1201,12 +1326,25 @@ export function SettingsClient() {
               </p>
             </div>
 
-            <div className="space-y-4">
-              <InputField
-                label="Threads User ID"
-                value={settings.threadsUserId}
-                onChange={(nextValue) => setSettings((current) => ({ ...current, threadsUserId: nextValue }))}
-                placeholder="threads user id atau kosong untuk me"
+              <div className="space-y-4">
+                <InputField
+                  label="Threads App ID"
+                  value={settings.threadsAppId}
+                  onChange={(nextValue) => setSettings((current) => ({ ...current, threadsAppId: nextValue }))}
+                  placeholder="Threads OAuth app id"
+                />
+                <InputField
+                  label="Threads App Secret"
+                  value={settings.threadsAppSecret}
+                  onChange={(nextValue) => setSettings((current) => ({ ...current, threadsAppSecret: nextValue }))}
+                  placeholder="Threads OAuth app secret"
+                  type="password"
+                />
+                <InputField
+                  label="Threads User ID"
+                  value={settings.threadsUserId}
+                  onChange={(nextValue) => setSettings((current) => ({ ...current, threadsUserId: nextValue }))}
+                  placeholder="threads user id atau kosong untuk me"
               />
               <InputField
                 label="Threads Username"
@@ -1253,11 +1391,96 @@ export function SettingsClient() {
                 {threadsTestResult ? <p className="text-sm leading-6 text-slate-600">{threadsTestResult}</p> : null}
               </div>
 
+                <div className="rounded-2xl bg-slate-50 px-4 py-3 text-sm leading-6 text-slate-600">
+                  Isi kredensial OAuth di sini bila app Threads berbeda dari app Meta utama. Jika dikosongkan, sistem fallback ke Meta App ID dan Meta App Secret. Untuk thread series, app akan membuat main post lalu self-reply berantai memakai `reply_to_id`.
+                </div>
+              </div>
+            </section>
+
+          {/* ── Threads Scout ── */}
+          <section className="rounded-[32px] border border-slate-200/60 bg-white p-6 shadow-panel">
+            <div className="mb-5">
+              <h3 className="text-lg font-semibold text-slate-950">Threads Scout — Auto Reply Keyword</h3>
+              <p className="mt-1 text-sm text-slate-500">
+                Scrape postingan Threads berdasarkan keyword, lalu auto-reply dengan gaya bahasa natural AI. Cocok untuk engagement organik dan soft-selling.
+              </p>
+            </div>
+
+            <div className="space-y-4">
+              <CheckboxField
+                label="Aktifkan Threads Scout"
+                checked={settings.threadsScoutEnabled}
+                onChange={(nextValue) => setSettings((current) => ({ ...current, threadsScoutEnabled: nextValue }))}
+                description="Saat aktif, cron job /api/cron/threads-scout akan scrape keyword dan auto-reply ke postingan yang ditemukan."
+              />
+
+              <label className="space-y-2">
+                <span className="text-sm font-medium text-slate-700">Keywords (satu per baris)</span>
+                <textarea
+                  value={settings.threadsScoutKeywords}
+                  onChange={(event) =>
+                    setSettings((current) => ({ ...current, threadsScoutKeywords: event.target.value }))
+                  }
+                  rows={6}
+                  className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm leading-6 text-slate-900"
+                  placeholder={"gpt plus\nchatgpt\nai tools\nai untuk bisnis"}
+                />
+              </label>
+
+              <label className="space-y-2">
+                <span className="text-sm font-medium text-slate-700">Persona AI (opsional)</span>
+                <textarea
+                  value={settings.threadsScoutPersona}
+                  onChange={(event) =>
+                    setSettings((current) => ({ ...current, threadsScoutPersona: event.target.value }))
+                  }
+                  rows={4}
+                  className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm leading-6 text-slate-900"
+                  placeholder={"Kamu orang biasa yang suka teknologi. Gaya bahasa santai, pakai singkatan kayak gw/lo/bgt. Jangan keliatan jualan."}
+                />
+                <p className="text-xs text-slate-400">Kosongkan untuk pakai persona default (casual Indonesian).</p>
+              </label>
+
+              <label className="space-y-2">
+                <span className="text-sm font-medium text-slate-700">Sell Angle / Konteks Produk</span>
+                <textarea
+                  value={settings.threadsScoutSellAngle}
+                  onChange={(event) =>
+                    setSettings((current) => ({ ...current, threadsScoutSellAngle: event.target.value }))
+                  }
+                  rows={4}
+                  className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm leading-6 text-slate-900"
+                  placeholder={"Kami punya layanan AI WhatsApp untuk bisnis. Bisa auto-reply customer 24 jam, hemat waktu, dan meningkatkan closing. Harga mulai 299rb/bulan."}
+                />
+                <p className="text-xs text-slate-400">AI akan selipkan ini secara natural jika relevan. Jika tidak relevan, AI akan skip.</p>
+              </label>
+
+              <div className="grid grid-cols-2 gap-4">
+                <InputField
+                  label="Limit Post per Keyword"
+                  value={settings.threadsScoutLimitPerKeyword}
+                  onChange={(nextValue) =>
+                    setSettings((current) => ({ ...current, threadsScoutLimitPerKeyword: nextValue }))
+                  }
+                  placeholder="20"
+                />
+                <InputField
+                  label="Max Reply per Run"
+                  value={settings.threadsScoutMaxRepliesPerRun}
+                  onChange={(nextValue) =>
+                    setSettings((current) => ({ ...current, threadsScoutMaxRepliesPerRun: nextValue }))
+                  }
+                  placeholder="5"
+                />
+              </div>
+
               <div className="rounded-2xl bg-slate-50 px-4 py-3 text-sm leading-6 text-slate-600">
-                Gunakan token Threads yang memiliki izin publish. Untuk thread series, app akan membuat main post lalu self-reply berantai memakai `reply_to_id`.
+                Cron: <code className="rounded bg-slate-200 px-1">POST /api/cron/threads-scout</code> dengan header{" "}
+                <code className="rounded bg-slate-200 px-1">x-scheduler-secret</code>. Sistem otomatis skip post yang sudah pernah direply (dedup by post ID).
               </div>
             </div>
           </section>
+
         </div>
 
         <section data-tour="settings-security" className="rounded-[32px] border border-slate-200/60 bg-white p-6 shadow-panel">

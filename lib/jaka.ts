@@ -154,9 +154,15 @@ Format keluaran WAJIB JSON valid dengan bentuk:
 }`;
 }
 
+function cleanJsonPayload(raw: string) {
+  return raw.trim().replace(/^```json/i, "").replace(/^```/, "").replace(/```$/, "").trim();
+}
+
 function safeParseJakaResponse(raw: string) {
+  const cleaned = cleanJsonPayload(raw);
+
   try {
-    const parsed = JSON.parse(raw) as Partial<AskJakaResult>;
+    const parsed = JSON.parse(cleaned) as Partial<AskJakaResult>;
     return {
       answer: String(parsed.answer ?? "").trim(),
       suggestions: Array.isArray(parsed.suggestions)
@@ -164,6 +170,23 @@ function safeParseJakaResponse(raw: string) {
         : []
     };
   } catch {
+    const start = cleaned.indexOf("{");
+    const end = cleaned.lastIndexOf("}");
+
+    if (start >= 0 && end > start) {
+      try {
+        const parsed = JSON.parse(cleaned.slice(start, end + 1)) as Partial<AskJakaResult>;
+        return {
+          answer: String(parsed.answer ?? "").trim(),
+          suggestions: Array.isArray(parsed.suggestions)
+            ? parsed.suggestions.map((item) => String(item).trim()).filter(Boolean).slice(0, 3)
+            : []
+        };
+      } catch {
+        return null;
+      }
+    }
+
     return null;
   }
 }

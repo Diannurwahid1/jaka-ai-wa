@@ -3,9 +3,9 @@ import { NextResponse, type NextRequest } from "next/server";
 import { AUTH_COOKIE, isSameOrigin, verifySessionToken } from "@/lib/auth-shared";
 
 const publicPagePaths = new Set(["/login", "/legal", "/privacy-policy", "/terms-of-service", "/data-deletion"]);
-const publicApiPaths = new Set(["/api/auth/login", "/api/webhook/wa", "/api/cron/creator-publish", "/api/cron/creator-generate"]);
+const publicApiPaths = new Set(["/api/auth/login", "/api/webhook/wa", "/api/cron/creator-publish", "/api/cron/creator-generate", "/api/cron/blast"]);
 const publicApiPrefixes = ["/api/media-proxy/"];
-const protectedAppPrefixes = ["/dashboard", "/jaka-creator", "/ai-chat", "/wa-monitor", "/knowledge-base", "/settings"];
+const protectedAppPrefixes = ["/dashboard", "/jaka-creator", "/ai-chat", "/wa-monitor", "/knowledge-base", "/settings", "/blast"];
 const protectedApiPrefixes = ["/api/"];
 
 async function hasValidSession(request: NextRequest) {

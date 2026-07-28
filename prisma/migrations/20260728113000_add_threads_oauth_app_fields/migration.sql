@@ -1,0 +1,3 @@
+ALTER TABLE "AppConfig"
+ADD COLUMN "threadsAppId" TEXT NOT NULL DEFAULT '',
+ADD COLUMN "threadsAppSecret" TEXT NOT NULL DEFAULT '';

@@ -1,5 +1,5 @@
 import { PrismaPg } from "@prisma/adapter-pg";
-import { PrismaClient } from "@prisma/client";
+import { Prisma, PrismaClient } from "@prisma/client";
 
 declare global {
   var prismaGlobal: PrismaClient | undefined;
@@ -22,4 +22,11 @@ export const prisma =
 
 if (process.env.NODE_ENV !== "production") {
   globalThis.prismaGlobal = prisma;
+}
+
+const appConfigModel = Prisma.dmmf.datamodel.models.find((model) => model.name === "AppConfig");
+const appConfigFieldNames = new Set((appConfigModel?.fields ?? []).map((field) => field.name));
+
+export function prismaSupportsAppConfigField(field: string) {
+  return appConfigFieldNames.has(field);
 }
