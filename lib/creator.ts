@@ -1227,7 +1227,9 @@ function commerceIntentInstruction(focus: string, angle: string) {
 
   if (!isEducation) {
     return `Intent promo/commerce:
-- Boleh menyebut restock, voucher, stok, benefit produk, dan CTA ke zyho.store jika relevan.
+- Boleh menyebut restock, voucher, stok, benefit produk.
+- Wajib tutup dengan CTA halus yang menyebut zyho.store atau URL produk. Jangan sampai caption promo tanpa arahan ke web.
+- CTA cukup 1 kalimat pendek, contoh: "yang butuh bisa cek zyho.store" atau "detailnya ada di zyho.store".
 - Tetap jangan hard selling.`;
   }
 
@@ -1372,7 +1374,7 @@ aktivasinya pakai email pribadi, private dan nggak sharing. dapet penyimpanan sa
 stok kali ini nggak banyak, yang kemarin nunggu langsung cek zyho.store
 - Fokus commerce: ${focus}.
 - Angle: ${angle}.
-- CTA cukup halus dan pendek, mengarah ke zyho.store atau URL produk jika tersedia.`
+- Untuk intent promo, caption WAJIB punya CTA pendek ke zyho.store atau URL produk. Untuk intent edukasi/informative, jangan pakai CTA komersial.`
   };
 }
 
