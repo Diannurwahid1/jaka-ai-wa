@@ -21,6 +21,21 @@ type GenerateJobInput = {
   objective?: CreatorObjective;
   type?: CreatorDraftType;
   autoSend?: boolean;
+  autoApprove?: boolean;
+  generationMode?: "manual" | "scheduled";
+  generationSlotKey?: string;
+  commerce?: {
+    enabled?: boolean;
+    focus?: string;
+    productId?: string;
+    voucherId?: string;
+    promoId?: string;
+    angle?: string;
+    style?: string;
+    length?: string;
+    includeVoucher?: boolean;
+    includePromo?: boolean;
+  };
 };
 
 type PlaygroundJobInput = {

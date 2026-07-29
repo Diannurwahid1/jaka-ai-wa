@@ -709,6 +709,57 @@ export function CreatorClient({ platform }: { platform: CreatorPlatform }) {
     }
   }
 
+  async function handleRunDraftSlotNow(slot: CreatorScheduleSlot, index: number) {
+    const slotBusyId = `draft-slot-${index}`;
+    setBusyId(slotBusyId);
+    setActiveJob(null);
+
+    try {
+      const isCommerceSlot = slot.source === "commerce";
+      const payload = await postJson("/api/creator/generate", {
+        platform,
+        topic: isCommerceSlot ? `Jalankan slot ${slot.label || index + 1} dari Zyho Snapshot sekarang.` : "",
+        count: 1,
+        role: profileForm.defaultRole,
+        tone: profileForm.defaultTone,
+        objective: profileForm.objective,
+        type: isCommerceSlot ? "single_post" : profileForm.defaultDraftType,
+        autoSend: !slot.autoApprove,
+        autoApprove: Boolean(slot.autoApprove),
+        generationMode: "manual",
+        generationSlotKey: `${platform}:manual:${Date.now()}:${index}`,
+        commerce: isCommerceSlot
+          ? {
+              enabled: true,
+              focus: slot.commerceFocus || "auto",
+              angle: slot.commerceAngle || "promo informatif",
+              style: slot.commerceStyle || "auto",
+              length: slot.commerceLength || "short",
+              productId: slot.commerceProductId || "",
+              voucherId: slot.commerceVoucherId || "",
+              promoId: slot.commercePromoId || "",
+              includeVoucher: slot.commerceIncludeVoucher !== false,
+              includePromo: slot.commerceIncludePromo !== false
+            }
+          : { enabled: false }
+      });
+      const job = await pollCreatorJob(String(payload.jobId));
+      await refreshOverview();
+      pushToast({
+        title: `Slot ${slot.label || index + 1} selesai: ${job.result?.kind === "generate" ? job.result.drafts.length : 0} draft dibuat`,
+        tone: "success"
+      });
+    } catch (error) {
+      pushToast({
+        title: error instanceof Error ? error.message : "Gagal menjalankan slot",
+        tone: "error"
+      });
+    } finally {
+      setActiveJob(null);
+      setBusyId(null);
+    }
+  }
+
   async function handlePlayground(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setBusyId("playground");
@@ -1042,13 +1093,23 @@ export function CreatorClient({ platform }: { platform: CreatorPlatform }) {
                       <div key={`draft-slot-${index}`} className="rounded-3xl border border-slate-200 bg-white p-4">
                         <div className="flex flex-wrap items-center justify-between gap-3">
                           <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">Draft slot {index + 1}</p>
-                          <button
-                            type="button"
-                            onClick={() => removeDraftScheduleSlot(index)}
-                            className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-700"
-                          >
-                            Hapus
-                          </button>
+                          <div className="flex flex-wrap items-center gap-2">
+                            <button
+                              type="button"
+                              onClick={() => void handleRunDraftSlotNow(slot, index)}
+                              disabled={busyId === `draft-slot-${index}`}
+                              className="rounded-full bg-slate-950 px-3 py-1.5 text-xs font-medium text-white disabled:opacity-60"
+                            >
+                              {busyId === `draft-slot-${index}` ? "Jalan..." : "Jalankan sekarang"}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => removeDraftScheduleSlot(index)}
+                              className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-700"
+                            >
+                              Hapus
+                            </button>
+                          </div>
                         </div>
                         <div className="mt-3 grid gap-3 md:grid-cols-2">
                           <label className="space-y-1">

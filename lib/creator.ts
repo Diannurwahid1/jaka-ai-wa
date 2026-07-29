@@ -3393,6 +3393,7 @@ export async function generateCreatorDrafts(input?: {
   objective?: CreatorObjective;
   type?: CreatorDraftType;
   autoSend?: boolean;
+  autoApprove?: boolean;
   generationMode?: "manual" | "scheduled";
   generationSlotKey?: string;
   commerce?: CommercePlaygroundInput;
@@ -3564,6 +3565,10 @@ export async function generateCreatorDrafts(input?: {
     if (document.status === "draft" && autoSend && profile.approvalPhone) {
       await sendDraftToApprovalChannel(document, profile, { source: "dashboard" });
     }
+  }
+
+  if (input?.autoApprove) {
+    await scheduleGeneratedDraftsForPublish(createdDrafts, profile, "manual run slot");
   }
 
   return createdDrafts;
