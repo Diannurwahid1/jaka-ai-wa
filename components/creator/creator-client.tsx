@@ -1039,64 +1039,88 @@ export function CreatorClient({ platform }: { platform: CreatorPlatform }) {
                   </p>
                   <div className="mt-4 space-y-3">
                     {profileForm.draftScheduleSlots.map((slot, index) => (
-                      <div key={`${slot.label}-${slot.time}-${index}`} className="rounded-3xl border border-slate-200 bg-white p-4">
-                        <div className="grid gap-3 lg:grid-cols-[1fr_160px_190px_auto]">
-                          <input
-                            value={slot.label}
-                            onChange={(event) => updateDraftScheduleSlot(index, { label: event.target.value })}
-                            placeholder="Label slot draft"
-                            className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900"
-                          />
-                          <input
-                            type="time"
-                            value={slot.time}
-                            onChange={(event) => updateDraftScheduleSlot(index, { time: event.target.value })}
-                            className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900"
-                          />
-                          <select
-                            value={slot.source || "topic"}
-                            onChange={(event) =>
-                              updateDraftScheduleSlot(index, {
-                                source: event.target.value as CreatorScheduleSlot["source"],
-                                autoApprove: event.target.value === "commerce" ? true : slot.autoApprove
-                              })
-                            }
-                            className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900"
-                          >
-                            <option value="topic">Topic Scout</option>
-                            <option value="commerce">Zyho Snapshot</option>
-                          </select>
+                      <div key={`draft-slot-${index}`} className="rounded-3xl border border-slate-200 bg-white p-4">
+                        <div className="flex flex-wrap items-center justify-between gap-3">
+                          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">Draft slot {index + 1}</p>
                           <button
                             type="button"
                             onClick={() => removeDraftScheduleSlot(index)}
-                            className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-medium text-slate-700"
+                            className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-700"
                           >
                             Hapus
                           </button>
                         </div>
+                        <div className="mt-3 grid gap-3 md:grid-cols-2">
+                          <label className="space-y-1">
+                            <span className="text-xs font-medium text-slate-500">Nama jadwal</span>
+                            <input
+                              value={slot.label}
+                              onChange={(event) => updateDraftScheduleSlot(index, { label: event.target.value })}
+                              placeholder="Label slot draft"
+                              className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900"
+                            />
+                          </label>
+                          <label className="space-y-1">
+                            <span className="text-xs font-medium text-slate-500">Jam generate</span>
+                            <input
+                              type="time"
+                              value={slot.time}
+                              onChange={(event) => updateDraftScheduleSlot(index, { time: event.target.value })}
+                              className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900"
+                            />
+                          </label>
+                          <label className="space-y-1 md:col-span-2">
+                            <span className="text-xs font-medium text-slate-500">Sumber konten</span>
+                            <select
+                              value={slot.source || "topic"}
+                              onChange={(event) =>
+                                updateDraftScheduleSlot(index, {
+                                  source: event.target.value as CreatorScheduleSlot["source"],
+                                  autoApprove: event.target.value === "commerce" ? true : slot.autoApprove
+                                })
+                              }
+                              className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900"
+                            >
+                              <option value="topic">Topic Scout</option>
+                              <option value="commerce">Zyho Snapshot</option>
+                            </select>
+                          </label>
+                        </div>
                         {slot.source === "commerce" ? (
-                          <div className="mt-3 grid gap-3 lg:grid-cols-4">
-                            <select value={slot.commerceFocus || "auto"} onChange={(event) => updateDraftScheduleSlot(index, { commerceFocus: event.target.value })} className="rounded-2xl border border-emerald-100 bg-emerald-50 px-4 py-3 text-sm text-emerald-950">
-                              {commerceFocusOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
-                            </select>
-                            <select value={slot.commerceAngle || "promo informatif"} onChange={(event) => updateDraftScheduleSlot(index, { commerceAngle: event.target.value })} className="rounded-2xl border border-emerald-100 bg-emerald-50 px-4 py-3 text-sm text-emerald-950">
-                              {commerceAngleOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
-                            </select>
-                            <select value={slot.commerceStyle || "auto"} onChange={(event) => updateDraftScheduleSlot(index, { commerceStyle: event.target.value })} className="rounded-2xl border border-emerald-100 bg-emerald-50 px-4 py-3 text-sm text-emerald-950">
-                              {commerceStyleOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
-                            </select>
-                            <select value={slot.commerceLength || "short"} onChange={(event) => updateDraftScheduleSlot(index, { commerceLength: event.target.value })} className="rounded-2xl border border-emerald-100 bg-emerald-50 px-4 py-3 text-sm text-emerald-950">
-                              {commerceLengthOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
-                            </select>
-                            <label className="flex items-center gap-3 rounded-2xl border border-emerald-100 bg-emerald-50 px-4 py-3 text-sm text-emerald-950">
+                          <div className="mt-3 grid gap-3 md:grid-cols-2">
+                            <label className="space-y-1">
+                              <span className="text-xs font-medium text-emerald-700">Focus</span>
+                              <select value={slot.commerceFocus || "auto"} onChange={(event) => updateDraftScheduleSlot(index, { commerceFocus: event.target.value })} className="w-full rounded-2xl border border-emerald-100 bg-emerald-50 px-4 py-3 text-sm text-emerald-950">
+                                {commerceFocusOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+                              </select>
+                            </label>
+                            <label className="space-y-1">
+                              <span className="text-xs font-medium text-emerald-700">Angle</span>
+                              <select value={slot.commerceAngle || "promo informatif"} onChange={(event) => updateDraftScheduleSlot(index, { commerceAngle: event.target.value })} className="w-full rounded-2xl border border-emerald-100 bg-emerald-50 px-4 py-3 text-sm text-emerald-950">
+                                {commerceAngleOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+                              </select>
+                            </label>
+                            <label className="space-y-1">
+                              <span className="text-xs font-medium text-emerald-700">Style</span>
+                              <select value={slot.commerceStyle || "auto"} onChange={(event) => updateDraftScheduleSlot(index, { commerceStyle: event.target.value })} className="w-full rounded-2xl border border-emerald-100 bg-emerald-50 px-4 py-3 text-sm text-emerald-950">
+                                {commerceStyleOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+                              </select>
+                            </label>
+                            <label className="space-y-1">
+                              <span className="text-xs font-medium text-emerald-700">Panjang</span>
+                              <select value={slot.commerceLength || "short"} onChange={(event) => updateDraftScheduleSlot(index, { commerceLength: event.target.value })} className="w-full rounded-2xl border border-emerald-100 bg-emerald-50 px-4 py-3 text-sm text-emerald-950">
+                                {commerceLengthOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+                              </select>
+                            </label>
+                            <label className="flex min-h-14 items-center gap-3 rounded-2xl border border-emerald-100 bg-emerald-50 px-4 py-3 text-sm text-emerald-950">
                               <input type="checkbox" checked={slot.commerceIncludeVoucher !== false} onChange={(event) => updateDraftScheduleSlot(index, { commerceIncludeVoucher: event.target.checked })} />
                               Sertakan voucher
                             </label>
-                            <label className="flex items-center gap-3 rounded-2xl border border-emerald-100 bg-emerald-50 px-4 py-3 text-sm text-emerald-950">
+                            <label className="flex min-h-14 items-center gap-3 rounded-2xl border border-emerald-100 bg-emerald-50 px-4 py-3 text-sm text-emerald-950">
                               <input type="checkbox" checked={slot.commerceIncludePromo !== false} onChange={(event) => updateDraftScheduleSlot(index, { commerceIncludePromo: event.target.checked })} />
                               Sertakan promo
                             </label>
-                            <label className="flex items-center gap-3 rounded-2xl border border-emerald-100 bg-emerald-50 px-4 py-3 text-sm text-emerald-950 lg:col-span-2">
+                            <label className="flex min-h-14 items-center gap-3 rounded-2xl border border-emerald-100 bg-emerald-50 px-4 py-3 text-sm text-emerald-950 md:col-span-2">
                               <input type="checkbox" checked={Boolean(slot.autoApprove)} onChange={(event) => updateDraftScheduleSlot(index, { autoApprove: event.target.checked })} />
                               Auto approve lalu jadwalkan publish ke Schedule Slots
                             </label>
