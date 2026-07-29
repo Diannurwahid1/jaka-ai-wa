@@ -37,6 +37,17 @@ export type CreatorTopicBriefStatus = "fresh" | "used" | "archived";
 export type CreatorScheduleSlot = {
   label: string;
   time: string;
+  source?: "topic" | "commerce";
+  commerceFocus?: string;
+  commerceAngle?: string;
+  commerceStyle?: string;
+  commerceLength?: string;
+  commerceProductId?: string;
+  commerceVoucherId?: string;
+  commercePromoId?: string;
+  commerceIncludeVoucher?: boolean;
+  commerceIncludePromo?: boolean;
+  autoApprove?: boolean;
 };
 
 export type CreatorProfile = {

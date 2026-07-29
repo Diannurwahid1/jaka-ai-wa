@@ -1370,7 +1370,7 @@ export function SettingsClient() {
             <div className="mb-5">
               <h3 className="text-lg font-semibold text-slate-950">Threads Config</h3>
               <p className="mt-1 text-sm text-slate-500">
-                Root config untuk publish Threads chain memakai Threads API dengan nested self-replies.
+                Root config untuk publish Threads. Tombol OAuth di bawah akan mengambil token Threads lalu otomatis ditukar menjadi long-lived token jika API mengizinkan.
               </p>
             </div>
 
@@ -1433,7 +1433,7 @@ export function SettingsClient() {
                   disabled={saving || loading}
                   className="rounded-2xl bg-slate-950 px-4 py-3 text-sm font-medium text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
                 >
-                  Connect Threads OAuth
+                  Connect / Refresh Long-Lived Token
                 </button>
                 <button
                   type="button"
@@ -1448,7 +1448,7 @@ export function SettingsClient() {
               </div>
 
                 <div className="rounded-2xl bg-slate-50 px-4 py-3 text-sm leading-6 text-slate-600">
-                  Isi kredensial OAuth di sini bila app Threads berbeda dari app Meta utama. Jika dikosongkan, sistem fallback ke Meta App ID dan Meta App Secret. Untuk thread series, app akan membuat main post lalu self-reply berantai memakai `reply_to_id`.
+                  Isi kredensial OAuth di sini bila app Threads berbeda dari app Meta utama. Jika dikosongkan, sistem fallback ke Meta App ID dan Meta App Secret. Reconnect token dari akun @zyhoofficial sebelum expired; callback akan menyimpan access token dan expiry ke Settings.
                 </div>
               </div>
             </section>

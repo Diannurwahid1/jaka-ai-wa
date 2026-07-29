@@ -214,6 +214,7 @@ type CreatorGenerationRetryDocument = {
   slotKey: string;
   slotLabel: string;
   slotTime: string;
+  slotConfig?: CreatorScheduleSlot;
   slotDate: Date;
   attempts: number;
   nextRetryAt: Date;
@@ -916,7 +917,18 @@ function normalizeScheduleSlots(platform: CreatorPlatform, input?: CreatorSchedu
   const normalized = input
     .map((slot) => ({
       label: String(slot.label ?? "").trim() || "Slot",
-      time: String(slot.time ?? "").trim()
+      time: String(slot.time ?? "").trim(),
+      source: slot.source === "commerce" ? "commerce" as const : "topic" as const,
+      commerceFocus: String(slot.commerceFocus ?? "auto").trim() || "auto",
+      commerceAngle: String(slot.commerceAngle ?? "promo informatif").trim() || "promo informatif",
+      commerceStyle: String(slot.commerceStyle ?? "auto").trim() || "auto",
+      commerceLength: String(slot.commerceLength ?? "short").trim() || "short",
+      commerceProductId: String(slot.commerceProductId ?? "").trim(),
+      commerceVoucherId: String(slot.commerceVoucherId ?? "").trim(),
+      commercePromoId: String(slot.commercePromoId ?? "").trim(),
+      commerceIncludeVoucher: slot.commerceIncludeVoucher !== false,
+      commerceIncludePromo: slot.commerceIncludePromo !== false,
+      autoApprove: Boolean(slot.autoApprove)
     }))
     .filter((slot) => /^\d{2}:\d{2}$/.test(slot.time))
     .slice(0, 24);
@@ -1935,6 +1947,66 @@ function pickNextScheduleSlotFromUsed(profile: CreatorProfile, used: Set<string>
   const next = candidates.find((candidate) => !used.has(candidate.toISOString())) ?? candidates[0] ?? now();
   used.add(next.toISOString());
   return next;
+}
+
+function buildCommerceInputFromSlot(slot: CreatorScheduleSlot): CommercePlaygroundInput | undefined {
+  if (slot.source !== "commerce") {
+    return undefined;
+  }
+
+  return {
+    enabled: true,
+    focus: slot.commerceFocus || "auto",
+    angle: slot.commerceAngle || "promo informatif",
+    style: slot.commerceStyle || "auto",
+    length: slot.commerceLength || "short",
+    productId: slot.commerceProductId || "",
+    voucherId: slot.commerceVoucherId || "",
+    promoId: slot.commercePromoId || "",
+    includeVoucher: slot.commerceIncludeVoucher !== false,
+    includePromo: slot.commerceIncludePromo !== false
+  };
+}
+
+async function scheduleGeneratedDraftsForPublish(createdDrafts: CreatorDraft[], profile: CreatorProfile, detail: string) {
+  if (createdDrafts.length === 0) {
+    return 0;
+  }
+
+  const { drafts } = await getCollections();
+  const usedScheduleSlots = await listUsedScheduleSlots(profile.platform);
+  let scheduled = 0;
+
+  for (const draft of createdDrafts) {
+    const document = await drafts.findOne({
+      creatorId: getCreatorId(),
+      draftId: draft.draftId,
+      platform: profile.platform,
+      status: { $in: ["draft", "pending_approval"] }
+    });
+
+    if (!document) {
+      continue;
+    }
+
+    const scheduledFor = pickNextScheduleSlotFromUsed(profile, usedScheduleSlots);
+    await drafts.updateOne(
+      { _id: document._id },
+      {
+        $set: {
+          status: "scheduled",
+          approvedAt: now(),
+          scheduledFor,
+          lastPublishSummary: `Scheduled for ${scheduledFor.toISOString()} via ${detail}`,
+          updatedAt: now()
+        }
+      }
+    );
+    await logApprovalAction(draft.draftId, document.platform, "approve", "dashboard", detail);
+    scheduled += 1;
+  }
+
+  return scheduled;
 }
 
 async function logApprovalAction(
@@ -3323,6 +3395,7 @@ export async function generateCreatorDrafts(input?: {
   autoSend?: boolean;
   generationMode?: "manual" | "scheduled";
   generationSlotKey?: string;
+  commerce?: CommercePlaygroundInput;
 }) {
   await assertCreatorGenerationEnabled("draft");
 
@@ -3336,12 +3409,15 @@ export async function generateCreatorDrafts(input?: {
   const objective = (input?.objective ?? profile.objective) as CreatorObjective;
   const type = (input?.type ?? profile.defaultDraftType ?? meta.defaultType) as CreatorDraftType;
   const settings = await readSettings(getCreatorId());
-  const seoKeywordConfig = buildSeoKeywordConfig(settings.seoKeywordEnabled, settings.seoKeywordList);
+  const commerce = await buildCommercePlaygroundInstruction(input?.commerce);
+  const seoKeywordConfig = commerce.context
+    ? { enabled: false, keywords: [] }
+    : buildSeoKeywordConfig(settings.seoKeywordEnabled, settings.seoKeywordList);
   const seoKeywordInstruction = buildSeoPromptInstruction(seoKeywordConfig);
   const autoSend = input?.autoSend !== false;
   const generationMode = input?.generationMode ?? "manual";
   const generationSlotKey = input?.generationSlotKey?.trim() || undefined;
-  const manualTopic = input?.topic?.trim();
+  const manualTopic = [input?.topic?.trim(), commerce.instruction].filter(Boolean).join("\n\n");
   const generatedDrafts: Array<{
     seed: GeneratedDraftSeed;
     topicBriefId?: ObjectId;
@@ -3414,11 +3490,12 @@ export async function generateCreatorDrafts(input?: {
     const topicForDraft =
       String(generatedDraft.topic ?? manualTopic ?? generated.fallbackTopic ?? `${meta.label} content`).trim() ||
       `${meta.label} content`;
-    const caption = ensureCaptionContainsSeoKeywords(
+    const baseCaption = ensureCaptionContainsSeoKeywords(
       String(generatedDraft.caption ?? "").trim() || buildCaptionFromParts(parts),
       topicForDraft,
       seoKeywordConfig
     );
+    const caption = commerce.context ? stripSearchRelatedSuffix(baseCaption) : baseCaption;
     const visualPrompt = meta.requiresImage
       ? await composeBrandedVisualPrompt(
           platform,
@@ -3685,10 +3762,10 @@ export async function processDueCreatorDraftGenerations(options?: {
 
       return {
         profile,
-        slot: {
+        slot: retryDocument.slotConfig ?? ({
           label: retryDocument.slotLabel,
           time: retryDocument.slotTime
-        },
+        } as CreatorScheduleSlot),
         slotDate: retryDocument.slotDate,
         slotKey: retryDocument.slotKey,
         retryDocument
@@ -3712,6 +3789,7 @@ export async function processDueCreatorDraftGenerations(options?: {
   let skipped = 0;
   let failed = 0;
   let retried = 0;
+  let scheduled = 0;
 
   for (const dueEntry of dueSlots) {
     const existingDraft = await collections.drafts.findOne({
@@ -3742,10 +3820,20 @@ export async function processDueCreatorDraftGenerations(options?: {
       const drafts = await generateCreatorDrafts({
         platform: dueEntry.profile.platform,
         count: 1,
-        autoSend: true,
+        type: dueEntry.slot.source === "commerce" ? "single_post" : dueEntry.profile.defaultDraftType,
+        autoSend: !dueEntry.slot.autoApprove,
         generationMode: "scheduled",
-        generationSlotKey: dueEntry.slotKey
+        generationSlotKey: dueEntry.slotKey,
+        commerce: buildCommerceInputFromSlot(dueEntry.slot)
       });
+
+      if (dueEntry.slot.autoApprove) {
+        scheduled += await scheduleGeneratedDraftsForPublish(
+          drafts,
+          dueEntry.profile,
+          `auto-generate slot ${dueEntry.slot.label}`
+        );
+      }
 
       if (dueEntry.retryDocument?._id) {
         retried += 1;
@@ -3773,6 +3861,7 @@ export async function processDueCreatorDraftGenerations(options?: {
         slotKey: dueEntry.slotKey,
         slotLabel: dueEntry.slot.label,
         slotTime: dueEntry.slot.time,
+        slotConfig: dueEntry.slot,
         slotDate: dueEntry.slotDate,
         attempts,
         nextRetryAt,
@@ -3807,6 +3896,7 @@ export async function processDueCreatorDraftGenerations(options?: {
     skipped,
     failed,
     retried,
+    scheduled,
     reason: dueSlots.length === 0 ? "Tidak ada slot draft due untuk diproses." : ""
   };
 }
