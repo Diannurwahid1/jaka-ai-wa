@@ -237,6 +237,8 @@ type CommercePlaygroundInput = {
   voucherId?: string;
   promoId?: string;
   angle?: string;
+  style?: string;
+  length?: string;
   includeVoucher?: boolean;
   includePromo?: boolean;
 };
@@ -252,6 +254,8 @@ type CommercePlaygroundContext = {
   };
   focus: string;
   angle: string;
+  style: string;
+  length: string;
   selected: {
     product?: Record<string, unknown>;
     voucher?: Record<string, unknown>;
@@ -1154,6 +1158,69 @@ function summarizeCommerceItems(items: unknown[] | undefined, selected: unknown 
   return ordered.map((item) => pickCommerceFields(item)).filter(Boolean);
 }
 
+function commerceLengthInstruction(length: string) {
+  if (length === "medium") {
+    return "Panjang caption 420 sampai 650 karakter. Boleh 3 sampai 5 paragraf pendek.";
+  }
+
+  if (length === "long") {
+    return "Panjang caption 650 sampai 850 karakter. Boleh 4 sampai 6 paragraf pendek, tetap padat dan enak dibaca.";
+  }
+
+  if (length === "auto") {
+    return "Pilih panjang paling cocok dengan data: kadang 280-420, kadang 420-650, kadang 650-850 karakter.";
+  }
+
+  return "Panjang caption 280 sampai 420 karakter. Wajib ringkas.";
+}
+
+function commerceStyleInstruction(style: string) {
+  const map: Record<string, string> = {
+    "deal-alert": "Style deal alert: langsung kabarkan offer, benefit utama, lalu CTA pendek. Hindari penjelasan panjang.",
+    "casual-restock": "Style casual restock: terasa seperti update stok dari owner, santai, familiar, dan tidak kaku.",
+    "founder-note": "Style founder note: tulis seperti catatan owner Zyho tentang kenapa offer ini berguna untuk workflow harian.",
+    "mini-story": "Style mini story: mulai dari situasi kecil yang relatable, lalu kaitkan ke produk/promo secara halus.",
+    "workflow-tip": "Style workflow tip: beri 1 tips praktis pemakaian AI, lalu sambungkan ke produk Zyho.",
+    comparison: "Style comparison: bandingkan sebelum/sesudah pakai tools AI secara sederhana tanpa menyerang brand lain.",
+    faq: "Style FAQ singkat: jawab satu pertanyaan umum customer dengan nada santai, lalu CTA ringan.",
+    auto: "Pilih style berbeda dari template restock biasa. Jangan selalu pakai struktur restock-aktivasi-stok."
+  };
+
+  return map[style] || map.auto;
+}
+
+function commerceVariationSeed() {
+  const hooks = [
+    "update stok",
+    "workflow tip",
+    "customer nanya",
+    "behind the offer",
+    "quick reminder",
+    "problem first",
+    "soft promo",
+    "mini FAQ"
+  ];
+  const ctas = [
+    "cek zyho.store",
+    "detailnya ada di zyho.store",
+    "yang nunggu bisa langsung cek",
+    "ambil sebelum habis",
+    "cek produk yang cocok dulu",
+    "kalau butuh buat kerjaan minggu ini, cek zyho.store"
+  ];
+  const emojis = ["👀", "⚡", "✨", "🫡", "✅", "🔥", "💡", "🧠", "🚀", "👇"];
+
+  return {
+    hookPattern: hooks[Math.floor(Math.random() * hooks.length)],
+    ctaPattern: ctas[Math.floor(Math.random() * ctas.length)],
+    emojiCandidates: [
+      emojis[Math.floor(Math.random() * emojis.length)],
+      emojis[Math.floor(Math.random() * emojis.length)]
+    ],
+    nonce: Math.random().toString(36).slice(2, 8)
+  };
+}
+
 async function buildCommercePlaygroundInstruction(input?: CommercePlaygroundInput): Promise<{
   instruction?: string;
   context?: CommercePlaygroundContext;
@@ -1169,7 +1236,10 @@ async function buildCommercePlaygroundInstruction(input?: CommercePlaygroundInpu
   const selectedPromo = findCommerceItem(snapshot.promos, input.promoId);
   const focus = String(input.focus || "auto").trim() || "auto";
   const angle = String(input.angle || "promo informatif").trim() || "promo informatif";
+  const style = String(input.style || "auto").trim() || "auto";
+  const length = String(input.length || "short").trim() || "short";
   const storeName = snapshot.store?.name || "Zyho Store";
+  const variation = commerceVariationSeed();
   const selected = {
     product: pickCommerceFields(selectedProduct),
     voucher: pickCommerceFields(selectedVoucher),
@@ -1181,6 +1251,9 @@ async function buildCommercePlaygroundInstruction(input?: CommercePlaygroundInpu
     store: snapshot.store,
     focus,
     angle,
+    style,
+    length,
+    variation,
     selected,
     products: summarizeCommerceItems(snapshot.products, selectedProduct, 6),
     vouchers: input.includeVoucher === false ? [] : summarizeCommerceItems(snapshot.vouchers, selectedVoucher, 8),
@@ -1195,6 +1268,8 @@ async function buildCommercePlaygroundInstruction(input?: CommercePlaygroundInpu
       counts: result.counts,
       focus,
       angle,
+      style,
+      length,
       selected
     },
     instruction: `Konteks commerce live dari ${storeName}.
@@ -1205,13 +1280,16 @@ ${JSON.stringify(promptPayload, null, 2)}
 
 Arahan konten:
 - Buat konten Threads single post yang pendek, casual, dan terasa seperti update owner Zyho ke followers.
-- Panjang caption maksimal 420 karakter.
-- Format caption wajib 2 sampai 4 paragraf pendek dipisah blank line. Jangan jadikan satu paragraf panjang.
+- ${commerceLengthInstruction(length)}
+- Format caption wajib paragraf pendek dipisah blank line. Jangan jadikan satu paragraf panjang.
 - Jangan pakai heading, bullet, numbering, hashtag, atau "Pencarian terkait".
-- Pakai maksimal 2 emoji total. Boleh tanpa emoji kalau tidak perlu.
+- Pakai 1 sampai 2 emoji total dari kandidat ini kalau cocok: ${variation.emojiCandidates.join(" ")}. Jangan lebih dari 2 emoji.
 - Jangan sebut terlalu banyak keyword. Hindari frasa SEO seperti "tools ai untuk mahasiswa" berulang.
 - Jangan gunakan kata agresif seperti "abal-abal", "investasi", "revenue", atau klaim berlebihan.
 - Prioritaskan fakta inventory/promo yang tersedia: restock, aktivasi, private/non-sharing, benefit, garansi, stok, voucher, atau URL produk.
+- ${commerceStyleInstruction(style)}
+- Variation seed: ${variation.nonce}. Gunakan pattern "${variation.hookPattern}" dan CTA "${variation.ctaPattern}" agar hasil tidak sama dengan percobaan sebelumnya.
+- Kalau data sama, tetap ubah struktur kalimat, hook, urutan benefit, dan CTA.
 - Style contoh:
 guys Gemini Pro 18 bulan udah restock lagi yaa
 
@@ -2465,6 +2543,10 @@ function buildPlatformPrompt({
 `
       : "";
   const trendSignals = "";
+  const isCommercePrompt = topic?.includes("Konteks commerce live dari");
+  const threadsPerspectiveInstruction = isCommercePrompt
+    ? "- Jika platform adalah Threads dan konteksnya commerce Zyho, tulis seperti update akun brand ke followers: casual, konkret, dan tidak corporate."
+    : "- Jika platform adalah Threads, tulis dari sudut pandang owner atau advisor bisnis. Fokus pada dampak bisnis, keputusan owner, revenue, booking, biaya, dan solusi. Hindari penjelasan teknis implementasi.";
 
   return `
 Platform: ${meta.label}
@@ -2494,7 +2576,7 @@ Task:
 - Hook harus kuat sejak kalimat awal.
 - Format output harus cocok dengan karakter platform ini, bukan copywriting generik lintas platform.
 ${draftTypeInstruction}
-- Jika platform adalah Threads, tulis dari sudut pandang owner atau advisor bisnis. Fokus pada dampak bisnis, keputusan owner, revenue, booking, biaya, dan solusi. Hindari penjelasan teknis implementasi.
+${threadsPerspectiveInstruction}
 ${seoKeywordInstruction}
 
 Return JSON:

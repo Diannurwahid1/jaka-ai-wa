@@ -39,6 +39,8 @@ type PlaygroundJobInput = {
     voucherId?: string;
     promoId?: string;
     angle?: string;
+    style?: string;
+    length?: string;
     includeVoucher?: boolean;
     includePromo?: boolean;
   };
@@ -64,6 +66,8 @@ type CreatorJobResult =
         };
         focus: string;
         angle: string;
+        style: string;
+        length: string;
         selected: {
           product?: Record<string, unknown>;
           voucher?: Record<string, unknown>;

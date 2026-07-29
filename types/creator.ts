@@ -261,6 +261,8 @@ export type CreatorAsyncJob =
           };
           focus: string;
           angle: string;
+          style: string;
+          length: string;
           selected: {
             product?: Record<string, unknown>;
             voucher?: Record<string, unknown>;

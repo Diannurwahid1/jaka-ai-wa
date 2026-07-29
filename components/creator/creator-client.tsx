@@ -80,6 +80,24 @@ const commerceAngleOptions = [
   { value: "urgency tanpa hard selling", label: "Urgency halus" }
 ];
 
+const commerceStyleOptions = [
+  { value: "auto", label: "Auto style" },
+  { value: "deal-alert", label: "Deal alert" },
+  { value: "casual-restock", label: "Casual restock" },
+  { value: "founder-note", label: "Founder note" },
+  { value: "mini-story", label: "Mini story" },
+  { value: "workflow-tip", label: "Workflow tip" },
+  { value: "comparison", label: "Comparison" },
+  { value: "faq", label: "FAQ singkat" }
+];
+
+const commerceLengthOptions = [
+  { value: "short", label: "Short 280-420" },
+  { value: "medium", label: "Medium 420-650" },
+  { value: "long", label: "Long 650-850" },
+  { value: "auto", label: "Auto length" }
+];
+
 const platformMeta: Record<CreatorPlatform, { label: string; description: string; imageFriendly: boolean }> = {
   threads: {
     label: "Threads",
@@ -360,6 +378,8 @@ export function CreatorClient({ platform }: { platform: CreatorPlatform }) {
     commerceVoucherId: "",
     commercePromoId: "",
     commerceAngle: "promo informatif",
+    commerceStyle: "auto",
+    commerceLength: "short",
     commerceIncludeVoucher: true,
     commerceIncludePromo: true
   });
@@ -689,6 +709,8 @@ export function CreatorClient({ platform }: { platform: CreatorPlatform }) {
                 voucherId: playgroundForm.commerceVoucherId,
                 promoId: playgroundForm.commercePromoId,
                 angle: playgroundForm.commerceAngle,
+                style: playgroundForm.commerceStyle,
+                length: playgroundForm.commerceLength,
                 includeVoucher: playgroundForm.commerceIncludeVoucher,
                 includePromo: playgroundForm.commerceIncludePromo
               }
@@ -1192,6 +1214,20 @@ export function CreatorClient({ platform }: { platform: CreatorPlatform }) {
                         {commerceAngleOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
                       </select>
                       <select
+                        value={playgroundForm.commerceStyle}
+                        onChange={(event) => setPlaygroundForm((current) => ({ ...current, commerceStyle: event.target.value }))}
+                        className="rounded-2xl border border-emerald-100 bg-white px-4 py-3 text-sm text-emerald-950"
+                      >
+                        {commerceStyleOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+                      </select>
+                      <select
+                        value={playgroundForm.commerceLength}
+                        onChange={(event) => setPlaygroundForm((current) => ({ ...current, commerceLength: event.target.value }))}
+                        className="rounded-2xl border border-emerald-100 bg-white px-4 py-3 text-sm text-emerald-950"
+                      >
+                        {commerceLengthOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+                      </select>
+                      <select
                         value={playgroundForm.commerceProductId}
                         onChange={(event) => setPlaygroundForm((current) => ({ ...current, commerceProductId: event.target.value }))}
                         className="rounded-2xl border border-emerald-100 bg-white px-4 py-3 text-sm text-emerald-950"
@@ -1264,6 +1300,7 @@ export function CreatorClient({ platform }: { platform: CreatorPlatform }) {
                   <p className="font-semibold">{playgroundCommerceContext.storeName} commerce context dipakai</p>
                   <p className="text-xs text-emerald-800">
                     Snapshot {formatDateTime(playgroundCommerceContext.generatedAt)} . Fokus {playgroundCommerceContext.focus} . Angle {playgroundCommerceContext.angle}
+                    {" "} . Style {playgroundCommerceContext.style} . Length {playgroundCommerceContext.length}
                   </p>
                   <p className="text-xs text-emerald-800">
                     Produk {playgroundCommerceContext.counts.products} . Voucher {playgroundCommerceContext.counts.vouchers} . Promo {playgroundCommerceContext.counts.promos}
