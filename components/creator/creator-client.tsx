@@ -1167,7 +1167,13 @@ export function CreatorClient({ platform }: { platform: CreatorPlatform }) {
                         <input
                           type="checkbox"
                           checked={playgroundForm.commerceEnabled}
-                          onChange={(event) => setPlaygroundForm((current) => ({ ...current, commerceEnabled: event.target.checked }))}
+                          onChange={(event) =>
+                            setPlaygroundForm((current) => ({
+                              ...current,
+                              commerceEnabled: event.target.checked,
+                              type: event.target.checked ? "single_post" : current.type
+                            }))
+                          }
                         />
                         Pakai data commerce Zyho
                       </label>

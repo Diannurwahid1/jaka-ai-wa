@@ -1020,6 +1020,13 @@ function ensureCaptionContainsSeoKeywords(
   return normalizedCaption ? `${normalizedCaption}\n\n${suffix}` : suffix;
 }
 
+function stripSearchRelatedSuffix(caption: string) {
+  return caption
+    .replace(/\n*\s*Pencarian terkait\s*:[\s\S]*$/i, "")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
 function buildSeoPromptInstruction(config: SeoKeywordConfig) {
   if (!config.enabled || config.keywords.length === 0) {
     return "";
@@ -1197,11 +1204,23 @@ Commerce data:
 ${JSON.stringify(promptPayload, null, 2)}
 
 Arahan konten:
-- Buat konten Threads single post yang terasa natural, bukan katalog kaku.
+- Buat konten Threads single post yang pendek, casual, dan terasa seperti update owner Zyho ke followers.
+- Panjang caption maksimal 420 karakter.
+- Format caption wajib 2 sampai 4 paragraf pendek dipisah blank line. Jangan jadikan satu paragraf panjang.
+- Jangan pakai heading, bullet, numbering, hashtag, atau "Pencarian terkait".
+- Pakai maksimal 2 emoji total. Boleh tanpa emoji kalau tidak perlu.
+- Jangan sebut terlalu banyak keyword. Hindari frasa SEO seperti "tools ai untuk mahasiswa" berulang.
+- Jangan gunakan kata agresif seperti "abal-abal", "investasi", "revenue", atau klaim berlebihan.
+- Prioritaskan fakta inventory/promo yang tersedia: restock, aktivasi, private/non-sharing, benefit, garansi, stok, voucher, atau URL produk.
+- Style contoh:
+guys Gemini Pro 18 bulan udah restock lagi yaa
+
+aktivasinya pakai email pribadi, private dan nggak sharing. dapet penyimpanan sampai 5TB juga 👀
+
+stok kali ini nggak banyak, yang kemarin nunggu langsung cek zyho.store
 - Fokus commerce: ${focus}.
 - Angle: ${angle}.
-- Masukkan CTA yang mengarah ke zyho.store atau URL produk jika tersedia.
-- Tetap edukatif/informatif agar cocok untuk mahasiswa, developer, kreator, dan profesional.`
+- CTA cukup halus dan pendek, mengarah ke zyho.store atau URL produk jika tersedia.`
   };
 }
 
@@ -2986,6 +3005,7 @@ export async function simulateCreatorDrafts(input?: {
   tone?: CreatorTone;
   objective?: CreatorObjective;
   type?: CreatorDraftType;
+  disableSeoKeywords?: boolean;
 }) {
   const platform = normalizePlatform(input?.platform);
   const meta = getPlatformMeta(platform);
@@ -2997,7 +3017,9 @@ export async function simulateCreatorDrafts(input?: {
   const objective = (input?.objective ?? profile.objective) as CreatorObjective;
   const type = (input?.type ?? profile.defaultDraftType ?? meta.defaultType) as CreatorDraftType;
   const settings = await readSettings(getCreatorId());
-  const seoKeywordConfig = buildSeoKeywordConfig(settings.seoKeywordEnabled, settings.seoKeywordList);
+  const seoKeywordConfig = input?.disableSeoKeywords
+    ? { enabled: false, keywords: [] }
+    : buildSeoKeywordConfig(settings.seoKeywordEnabled, settings.seoKeywordList);
   const seoKeywordInstruction = buildSeoPromptInstruction(seoKeywordConfig);
   const manualTopic = input?.topic?.trim();
   const generatedDrafts: GeneratedDraftSeed[] = [];
@@ -3086,11 +3108,12 @@ export async function simulateCreatorDrafts(input?: {
     const topicForDraft =
       String(generatedDraft.topic ?? manualTopic ?? topicReferences[index] ?? `${meta.label} preview`).trim() ||
       `${meta.label} preview`;
-    const caption = ensureCaptionContainsSeoKeywords(
+    const baseCaption = ensureCaptionContainsSeoKeywords(
       String(generatedDraft.caption ?? "").trim() || buildCaptionFromParts(parts),
       topicForDraft,
       seoKeywordConfig
     );
+    const caption = input?.disableSeoKeywords ? stripSearchRelatedSuffix(baseCaption) : baseCaption;
     const visualPrompt = meta.requiresImage
       ? await composeBrandedVisualPrompt(
           platform,
@@ -3166,7 +3189,8 @@ export async function runCreatorPlayground(input?: {
   const topic = [input?.topic?.trim(), commerce.instruction].filter(Boolean).join("\n\n");
   const drafts = await simulateCreatorDrafts({
     ...input,
-    topic: topic || input?.topic
+    topic: topic || input?.topic,
+    disableSeoKeywords: Boolean(commerce.context)
   });
   const simulations = input?.simulateUpload
     ? await Promise.all(drafts.map((draft) => simulatePlatformPublish(getCreatorId(), draft)))
