@@ -1212,13 +1212,53 @@ function commerceStyleInstruction(style: string) {
     "casual-restock": "Style casual restock: terasa seperti update stok dari owner, santai, familiar, dan tidak kaku.",
     "founder-note": "Style founder note: tulis seperti catatan owner Zyho tentang kenapa offer ini berguna untuk workflow harian.",
     "mini-story": "Style mini story: mulai dari situasi kecil yang relatable, lalu kaitkan ke produk/promo secara halus.",
-    "workflow-tip": "Style workflow tip: beri 1 tips praktis pemakaian AI, lalu sambungkan ke produk Zyho.",
+    "workflow-tip": "Style workflow tip: beri 1 tips praktis pemakaian AI yang bisa langsung dipakai. Jangan otomatis sambungkan ke produk kecuali intent-nya promo.",
     comparison: "Style comparison: bandingkan sebelum/sesudah pakai tools AI secara sederhana tanpa menyerang brand lain.",
     faq: "Style FAQ singkat: jawab satu pertanyaan umum customer dengan nada santai, lalu CTA ringan.",
     auto: "Pilih style berbeda dari template restock biasa. Jangan selalu pakai struktur restock-aktivasi-stok."
   };
 
   return map[style] || map.auto;
+}
+
+function commerceIntentInstruction(focus: string, angle: string) {
+  const normalized = `${focus} ${angle}`.toLowerCase();
+  const isEducation = normalized.includes("education") || normalized.includes("edukasi") || normalized.includes("informative") || normalized.includes("informatif");
+
+  if (!isEducation) {
+    return `Intent promo/commerce:
+- Boleh menyebut restock, voucher, stok, benefit produk, dan CTA ke zyho.store jika relevan.
+- Tetap jangan hard selling.`;
+  }
+
+  return `Intent edukasi/informative:
+- Fokus utama WAJIB edukasi, studi kasus, tips workflow, cara berpikir, atau contoh penggunaan AI.
+- Jangan membuat post jualan. Jangan menyebut "restock", "stok terbatas", "yang nunggu", "langsung cek", "voucher", "promo", "diskon", "beli", atau CTA ke zyho.store.
+- Jangan mengarahkan pembaca untuk checkout/cek produk. Tidak perlu CTA komersial.
+- Boleh menyebut nama tools seperti Gemini/ChatGPT hanya sebagai contoh konteks belajar/kerja, bukan sebagai offer.
+- Struktur yang disarankan: masalah kecil -> insight/tips -> contoh penerapan -> penutup reflektif.
+- Contoh arah: "kalau riset terasa lama, biasanya masalahnya bukan toolsnya, tapi cara mecah pertanyaan..."`;
+}
+
+function commerceExampleInstruction(focus: string, angle: string) {
+  const normalized = `${focus} ${angle}`.toLowerCase();
+  const isEducation = normalized.includes("education") || normalized.includes("edukasi") || normalized.includes("informative") || normalized.includes("informatif");
+
+  if (isEducation) {
+    return `Style contoh edukasi:
+kalau riset terasa lama, coba jangan mulai dari "cari semua referensi"
+
+mulai dari 3 pertanyaan kecil dulu: apa masalahnya, siapa yang terdampak, dan keputusan apa yang mau diambil
+
+AI bakal jauh lebih kepake kalau arah berpikirnya udah jelas dari awal`;
+  }
+
+  return `Style contoh promo:
+guys Gemini Pro 18 bulan udah restock lagi yaa
+
+aktivasinya pakai email pribadi, private dan nggak sharing. dapet penyimpanan sampai 5TB juga
+
+stok kali ini nggak banyak, yang kemarin nunggu langsung cek zyho.store`;
 }
 
 function commerceVariationSeed() {
@@ -1272,6 +1312,7 @@ async function buildCommercePlaygroundInstruction(input?: CommercePlaygroundInpu
   const length = String(input.length || "short").trim() || "short";
   const storeName = snapshot.store?.name || "Zyho Store";
   const variation = commerceVariationSeed();
+  const intentInstruction = commerceIntentInstruction(focus, angle);
   const selected = {
     product: pickCommerceFields(selectedProduct),
     voucher: pickCommerceFields(selectedVoucher),
@@ -1318,9 +1359,10 @@ Arahan konten:
 - Pakai 1 sampai 2 emoji total dari kandidat ini kalau cocok: ${variation.emojiCandidates.join(" ")}. Jangan lebih dari 2 emoji.
 - Jangan sebut terlalu banyak keyword. Hindari frasa SEO seperti "tools ai untuk mahasiswa" berulang.
 - Jangan gunakan kata agresif seperti "abal-abal", "investasi", "revenue", atau klaim berlebihan.
-- Prioritaskan fakta inventory/promo yang tersedia: restock, aktivasi, private/non-sharing, benefit, garansi, stok, voucher, atau URL produk.
 - ${commerceStyleInstruction(style)}
-- Variation seed: ${variation.nonce}. Gunakan pattern "${variation.hookPattern}" dan CTA "${variation.ctaPattern}" agar hasil tidak sama dengan percobaan sebelumnya.
+- ${intentInstruction}
+- Jika intent edukasi/informative, abaikan contoh promo/restock/CTA di bawah; hasil akhir harus murni edukasi tanpa jualan.
+- Variation seed: ${variation.nonce}. Gunakan pattern "${variation.hookPattern}" agar hasil tidak sama dengan percobaan sebelumnya. CTA pattern "${variation.ctaPattern}" hanya boleh dipakai untuk intent promo, tidak untuk edukasi/informative.
 - Kalau data sama, tetap ubah struktur kalimat, hook, urutan benefit, dan CTA.
 - Style contoh:
 guys Gemini Pro 18 bulan udah restock lagi yaa
