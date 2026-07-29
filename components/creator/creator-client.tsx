@@ -520,7 +520,7 @@ export function CreatorClient({ platform }: { platform: CreatorPlatform }) {
     setProfileForm((current) => ({
       ...current,
       draftScheduleSlots:
-        current.draftScheduleSlots.length >= 8
+        current.draftScheduleSlots.length >= 24
           ? current.draftScheduleSlots
           : [...current.draftScheduleSlots, { label: `Slot ${current.draftScheduleSlots.length + 1}`, time: "09:00" }]
     }));
@@ -1009,7 +1009,8 @@ export function CreatorClient({ platform }: { platform: CreatorPlatform }) {
                   </label>
                   <p className="mt-2 text-sm leading-6 text-slate-600">
                     Saat aktif, cron draft akan membuat 1 draft baru per slot waktu di bawah. Topic brief yang dipakai langsung
-                    ditandai <span className="font-medium text-slate-900">used</span> agar tidak dipakai ulang.
+                    ditandai <span className="font-medium text-slate-900">used</span> agar tidak dipakai ulang. Jika AI error,
+                    slot akan retry otomatis sampai berhasil dengan jeda bertahap.
                   </p>
                   <div className="mt-4 space-y-3">
                     {profileForm.draftScheduleSlots.map((slot, index) => (
@@ -1041,7 +1042,7 @@ export function CreatorClient({ platform }: { platform: CreatorPlatform }) {
                     onClick={addDraftScheduleSlot}
                     className="mt-4 rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-medium text-slate-700"
                   >
-                    Tambah slot draft
+                    Tambah slot draft ({profileForm.draftScheduleSlots.length}/24)
                   </button>
                 </div>
                 {isImagePlatform ? (
