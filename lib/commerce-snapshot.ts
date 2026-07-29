@@ -42,6 +42,16 @@ function normalizeBaseUrl(value: string) {
   return value.trim().replace(/\/$/, "");
 }
 
+function resolveRequestOrigin(baseUrl: string) {
+  return normalizeBaseUrl(
+    process.env.COMMERCE_ORIGIN ||
+      process.env.CREATOR_COMMERCE_ORIGIN ||
+      process.env.NEXTAUTH_URL ||
+      process.env.APP_URL ||
+      baseUrl
+  );
+}
+
 function resolveCommerceConfig(settings: Awaited<ReturnType<typeof readSettings>>) {
   const baseUrl = normalizeBaseUrl(
     settings.commerceBaseUrl ||
@@ -70,7 +80,8 @@ function resolveCommerceConfig(settings: Awaited<ReturnType<typeof readSettings>
         .toLowerCase() === "true",
     baseUrl,
     snapshotPath,
-    secret
+    secret,
+    origin: resolveRequestOrigin(baseUrl)
   };
 }
 
@@ -129,7 +140,8 @@ export async function fetchCommerceSnapshot(businessId: string): Promise<Commerc
   const cached = snapshotCache.get(cacheKey);
   const headers: Record<string, string> = {
     Authorization: `Bearer ${config.secret}`,
-    Accept: "application/json"
+    Accept: "application/json",
+    Origin: config.origin
   };
 
   if (cached?.etag) {
@@ -200,4 +212,3 @@ export async function testCommerceSnapshotConnection(businessId: string) {
     summary: `${storeName} snapshot OK: ${result.counts.products} produk, ${result.counts.vouchers} voucher, ${result.counts.promos} promo${result.notModified ? " (304 cache)" : ""}.`
   };
 }
-
