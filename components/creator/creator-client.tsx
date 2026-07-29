@@ -9,6 +9,7 @@ import { formatDateTime } from "@/lib/utils";
 import {
   CreatorAsyncJob,
   CreatorDraft,
+  CreatorDraftType,
   CreatorObjective,
   CreatorOverview,
   CreatorPlatform,
@@ -42,6 +43,11 @@ const objectiveOptions: Array<{ value: CreatorObjective; label: string }> = [
   { value: "authority", label: "Authority" },
   { value: "awareness", label: "Awareness" },
   { value: "soft-selling", label: "Soft Selling" }
+];
+
+const draftTypeOptions: Array<{ value: CreatorDraftType; label: string }> = [
+  { value: "single_post", label: "Single post" },
+  { value: "thread_series", label: "Thread series" }
 ];
 
 const platformMeta: Record<CreatorPlatform, { label: string; description: string; imageFriendly: boolean }> = {
@@ -278,6 +284,7 @@ export function CreatorClient({ platform }: { platform: CreatorPlatform }) {
     approvalPhone: "",
     defaultRole: "informative" as CreatorRole,
     defaultTone: "sharp" as CreatorTone,
+    defaultDraftType: platform === "threads" ? "thread_series" as CreatorDraftType : "single_post" as CreatorDraftType,
     objective: "engagement" as CreatorObjective,
     postsPerDay: "1",
     planningDays: "3",
@@ -294,6 +301,7 @@ export function CreatorClient({ platform }: { platform: CreatorPlatform }) {
     role: "informative" as CreatorRole,
     tone: "sharp" as CreatorTone,
     objective: "engagement" as CreatorObjective,
+    type: platform === "threads" ? "thread_series" as CreatorDraftType : "single_post" as CreatorDraftType,
     autoSend: true
   });
   const [playgroundForm, setPlaygroundForm] = useState({
@@ -302,6 +310,7 @@ export function CreatorClient({ platform }: { platform: CreatorPlatform }) {
     role: "informative" as CreatorRole,
     tone: "sharp" as CreatorTone,
     objective: "engagement" as CreatorObjective,
+    type: platform === "threads" ? "thread_series" as CreatorDraftType : "single_post" as CreatorDraftType,
     simulateUpload: true
   });
   const [playgroundDrafts, setPlaygroundDrafts] = useState<CreatorDraft[]>([]);
@@ -363,6 +372,7 @@ export function CreatorClient({ platform }: { platform: CreatorPlatform }) {
       approvalPhone: nextOverview.profile.approvalPhone,
       defaultRole: nextOverview.profile.defaultRole,
       defaultTone: nextOverview.profile.defaultTone,
+      defaultDraftType: nextOverview.profile.defaultDraftType,
       objective: nextOverview.profile.objective,
       postsPerDay: String(nextOverview.profile.postsPerDay),
       planningDays: String(nextOverview.profile.planningDays),
@@ -378,13 +388,15 @@ export function CreatorClient({ platform }: { platform: CreatorPlatform }) {
       count: String(nextOverview.profile.postsPerDay),
       role: nextOverview.profile.defaultRole,
       tone: nextOverview.profile.defaultTone,
-      objective: nextOverview.profile.objective
+      objective: nextOverview.profile.objective,
+      type: nextOverview.profile.defaultDraftType
     }));
     setPlaygroundForm((current) => ({
       ...current,
       role: nextOverview.profile.defaultRole,
       tone: nextOverview.profile.defaultTone,
-      objective: nextOverview.profile.objective
+      objective: nextOverview.profile.objective,
+      type: nextOverview.profile.defaultDraftType
     }));
   }, [platform]);
 
@@ -549,6 +561,7 @@ export function CreatorClient({ platform }: { platform: CreatorPlatform }) {
         role: generateForm.role,
         tone: generateForm.tone,
         objective: generateForm.objective,
+        type: generateForm.type,
         autoSend: generateForm.autoSend
       });
       const job = await pollCreatorJob(String(payload.jobId));
@@ -584,6 +597,7 @@ export function CreatorClient({ platform }: { platform: CreatorPlatform }) {
         role: playgroundForm.role,
         tone: playgroundForm.tone,
         objective: playgroundForm.objective,
+        type: playgroundForm.type,
         simulateUpload: playgroundForm.simulateUpload
       });
       const job = await pollCreatorJob(String(payload.jobId));
@@ -852,6 +866,7 @@ export function CreatorClient({ platform }: { platform: CreatorPlatform }) {
                 <textarea value={profileForm.audience} onChange={(event) => setProfileForm((current) => ({ ...current, audience: event.target.value }))} rows={3} placeholder="Target audience" className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm leading-6 text-slate-900 md:col-span-2" />
                 <select value={profileForm.defaultRole} onChange={(event) => setProfileForm((current) => ({ ...current, defaultRole: event.target.value as CreatorRole }))} className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900">{roleOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select>
                 <select value={profileForm.defaultTone} onChange={(event) => setProfileForm((current) => ({ ...current, defaultTone: event.target.value as CreatorTone }))} className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900">{toneOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select>
+                <select value={profileForm.defaultDraftType} onChange={(event) => setProfileForm((current) => ({ ...current, defaultDraftType: event.target.value as CreatorDraftType }))} className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900">{draftTypeOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select>
                 <select value={profileForm.objective} onChange={(event) => setProfileForm((current) => ({ ...current, objective: event.target.value as CreatorObjective }))} className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900">{objectiveOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select>
                 <input value={profileForm.postsPerDay} onChange={(event) => setProfileForm((current) => ({ ...current, postsPerDay: event.target.value }))} placeholder="Posts per day" className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900" />
                 <input value={profileForm.planningDays} onChange={(event) => setProfileForm((current) => ({ ...current, planningDays: event.target.value }))} placeholder="Planning days" className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900" />
@@ -946,10 +961,11 @@ export function CreatorClient({ platform }: { platform: CreatorPlatform }) {
                     <input value={generateForm.count} onChange={(event) => setGenerateForm((current) => ({ ...current, count: event.target.value }))} placeholder="Jumlah draft" className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900" />
                     <label className="flex items-center gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700"><input type="checkbox" checked={generateForm.autoSend} onChange={(event) => setGenerateForm((current) => ({ ...current, autoSend: event.target.checked }))} />Kirim ke approval phone</label>
                   </div>
-                  <div className="grid gap-4 md:grid-cols-3">
+                  <div className="grid gap-4 md:grid-cols-4">
                     <select value={generateForm.role} onChange={(event) => setGenerateForm((current) => ({ ...current, role: event.target.value as CreatorRole }))} className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900">{roleOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select>
                     <select value={generateForm.tone} onChange={(event) => setGenerateForm((current) => ({ ...current, tone: event.target.value as CreatorTone }))} className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900">{toneOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select>
                     <select value={generateForm.objective} onChange={(event) => setGenerateForm((current) => ({ ...current, objective: event.target.value as CreatorObjective }))} className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900">{objectiveOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select>
+                    <select value={generateForm.type} onChange={(event) => setGenerateForm((current) => ({ ...current, type: event.target.value as CreatorDraftType }))} className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900">{draftTypeOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select>
                   </div>
                 </div>
                 <button type="submit" disabled={busyId === "generate"} className="mt-5 rounded-2xl bg-accent px-5 py-3 text-sm font-medium text-white disabled:opacity-60">{busyId === "generate" ? "Memproses job..." : `Generate ${platformMeta[platform].label}`}</button>
@@ -1027,10 +1043,11 @@ export function CreatorClient({ platform }: { platform: CreatorPlatform }) {
                     Simulasikan upload ke platform
                   </label>
                 </div>
-                <div className="grid gap-4 md:grid-cols-3">
+                <div className="grid gap-4 md:grid-cols-4">
                   <select value={playgroundForm.role} onChange={(event) => setPlaygroundForm((current) => ({ ...current, role: event.target.value as CreatorRole }))} className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900">{roleOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select>
                   <select value={playgroundForm.tone} onChange={(event) => setPlaygroundForm((current) => ({ ...current, tone: event.target.value as CreatorTone }))} className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900">{toneOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select>
                   <select value={playgroundForm.objective} onChange={(event) => setPlaygroundForm((current) => ({ ...current, objective: event.target.value as CreatorObjective }))} className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900">{objectiveOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select>
+                  <select value={playgroundForm.type} onChange={(event) => setPlaygroundForm((current) => ({ ...current, type: event.target.value as CreatorDraftType }))} className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900">{draftTypeOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select>
                 </div>
               </div>
               <button type="submit" disabled={busyId === "playground"} className="mt-5 rounded-2xl bg-slate-950 px-5 py-3 text-sm font-medium text-white disabled:opacity-60">{busyId === "playground" ? "Memproses simulasi..." : "Run Playground"}</button>

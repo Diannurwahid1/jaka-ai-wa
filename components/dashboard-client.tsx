@@ -34,7 +34,8 @@ const connectionOrder: Array<Pick<DashboardConnectionCheck, "key" | "label">> = 
   { key: "embedding", label: "MongoDB / Embedding" },
   { key: "meta", label: "Meta Facebook / Instagram" },
   { key: "threads", label: "Threads" },
-  { key: "linkedin", label: "LinkedIn" }
+  { key: "linkedin", label: "LinkedIn" },
+  { key: "commerce", label: "Zyho Commerce Snapshot" }
 ];
 
 function buildInitialChecks(): DashboardConnectionCheck[] {

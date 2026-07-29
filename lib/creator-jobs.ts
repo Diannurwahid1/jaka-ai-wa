@@ -2,7 +2,15 @@ import { randomUUID } from "crypto";
 
 import { runInBusinessContext } from "@/lib/business-context";
 import { generateCreatorDrafts, runCreatorPlayground } from "@/lib/creator";
-import { CreatorDraft, CreatorObjective, CreatorPlatform, CreatorPublishSimulation, CreatorRole, CreatorTone } from "@/types/creator";
+import {
+  CreatorDraft,
+  CreatorDraftType,
+  CreatorObjective,
+  CreatorPlatform,
+  CreatorPublishSimulation,
+  CreatorRole,
+  CreatorTone
+} from "@/types/creator";
 
 type GenerateJobInput = {
   platform?: string;
@@ -11,6 +19,7 @@ type GenerateJobInput = {
   role?: CreatorRole;
   tone?: CreatorTone;
   objective?: CreatorObjective;
+  type?: CreatorDraftType;
   autoSend?: boolean;
 };
 
@@ -21,6 +30,7 @@ type PlaygroundJobInput = {
   role?: CreatorRole;
   tone?: CreatorTone;
   objective?: CreatorObjective;
+  type?: CreatorDraftType;
   simulateUpload?: boolean;
 };
 

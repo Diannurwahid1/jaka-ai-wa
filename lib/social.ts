@@ -688,12 +688,27 @@ export async function exchangeThreadsAuthorizationCode(businessId: string, code:
     signal: AbortSignal.timeout(30000)
   });
 
-  const accessToken = String(tokenData.access_token ?? "").trim();
+  const shortLivedAccessToken = String(tokenData.access_token ?? "").trim();
   const userIdFromExchange = String(tokenData.user_id ?? "").trim();
 
-  if (!accessToken) {
+  if (!shortLivedAccessToken) {
     throw new Error("Threads OAuth tidak mengembalikan access token.");
   }
+
+  const longLivedTokenData = await fetchJsonOrThrow<{
+    access_token?: string;
+    expires_in?: number;
+  }>(
+    `https://graph.threads.net/access_token?grant_type=th_exchange_token&client_secret=${encodeURIComponent(
+      config.clientSecret
+    )}&access_token=${encodeURIComponent(shortLivedAccessToken)}`,
+    {
+      signal: AbortSignal.timeout(30000)
+    }
+  );
+
+  const accessToken = String(longLivedTokenData.access_token ?? shortLivedAccessToken).trim();
+  const expiresIn = Number(longLivedTokenData.expires_in ?? 3600);
 
   const profile = await fetchJsonOrThrow<{
     id?: string | number;
@@ -714,7 +729,7 @@ export async function exchangeThreadsAuthorizationCode(businessId: string, code:
       threadsUserId: userId,
       threadsUsername: username,
       threadsAccessToken: accessToken,
-      threadsTokenExpiresAt: toIsoExpiry(3600)
+      threadsTokenExpiresAt: toIsoExpiry(Number.isFinite(expiresIn) ? expiresIn : 3600)
     },
     businessId
   );
@@ -874,7 +889,7 @@ export async function simulatePlatformPublish(businessId: string, draft: Creator
             media_type: getThreadsMediaType(draft, index),
             text: content,
             image_url: index === 0 ? imageUrl || undefined : undefined,
-            reply_to_id: index === 0 ? undefined : `<thread_id_${index}>`
+            reply_to_id: draft.type === "thread_series" && index > 0 ? `<thread_id_${index}>` : undefined
           },
           publish: {
             creation_id: `<creation_id_${index + 1}>`
@@ -891,7 +906,9 @@ export async function simulatePlatformPublish(businessId: string, draft: Creator
         [
           "Create main thread",
           "Publish main thread",
-          ...chain.slice(1).flatMap((_, index) => [`Create reply ${index + 1}`, `Publish reply ${index + 1}`])
+          ...(draft.type === "thread_series"
+            ? chain.slice(1).flatMap((_, index) => [`Create reply ${index + 1}`, `Publish reply ${index + 1}`])
+            : [])
         ],
         []
       );
@@ -1028,7 +1045,7 @@ export async function publishDraftToPlatform(
         createParams.set("image_url", imageUrl);
       }
 
-      if (index > 0) {
+      if (draft.type === "thread_series" && index > 0) {
         createParams.set("reply_to_id", publishedIds[index - 1]);
       }
 

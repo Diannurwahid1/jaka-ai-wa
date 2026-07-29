@@ -51,6 +51,7 @@ export type CreatorProfile = {
   approvalPhone: string;
   defaultRole: CreatorRole;
   defaultTone: CreatorTone;
+  defaultDraftType: CreatorDraftType;
   postsPerDay: number;
   planningDays: number;
   scheduleSlots: CreatorScheduleSlot[];

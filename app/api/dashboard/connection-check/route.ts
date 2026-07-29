@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 
 import { testAIConnection } from "@/lib/ai";
 import { requireSession } from "@/lib/auth";
+import { testCommerceSnapshotConnection } from "@/lib/commerce-snapshot";
 import { testEmbeddingConnection } from "@/lib/rag";
 import { readSettings } from "@/lib/settings";
 import { testLinkedInConnection, testMetaConnection, testThreadsConnection } from "@/lib/social";
@@ -124,6 +125,22 @@ const connectionMeta: Record<
     },
     run: async (businessId) => {
       const result = await testLinkedInConnection(businessId);
+      return { summary: result.summary };
+    }
+  },
+  commerce: {
+    label: "Zyho Commerce Snapshot",
+    affectedSettings: ["Commerce Base URL", "Snapshot Path", "Integration Secret"],
+    validate: (settings) => {
+      const missing: string[] = [];
+      if (!settings.commerceIntegrationEnabled) missing.push("Commerce Snapshot Enabled");
+      if (!settings.commerceBaseUrl.trim()) missing.push("Commerce Base URL");
+      if (!settings.commerceSnapshotPath.trim()) missing.push("Snapshot Path");
+      if (!settings.commerceIntegrationSecret.trim()) missing.push("Integration Secret");
+      return missing;
+    },
+    run: async (businessId) => {
+      const result = await testCommerceSnapshotConnection(businessId);
       return { summary: result.summary };
     }
   }

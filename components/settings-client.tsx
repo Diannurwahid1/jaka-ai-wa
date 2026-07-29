@@ -72,6 +72,13 @@ const initialSettings: AppSettings = {
   schedulerSecret: "",
   seoKeywordEnabled: true,
   seoKeywordList: "",
+  commerceIntegrationEnabled: false,
+  commerceBaseUrl: "",
+  commerceSnapshotPath: "/api/integrations/creator/catalog-snapshot",
+  commerceIntegrationSecret: "",
+  commerceSnapshotMaxAgeMinutes: "30",
+  commercePrePublishRevalidation: true,
+  commerceStaleDataBehavior: "hold",
   // Threads Scout
   threadsScoutEnabled: false,
   threadsScoutKeywords: "",
@@ -571,6 +578,28 @@ export function SettingsClient() {
     }
   }
 
+  async function handleTestCommerceConnection() {
+    try {
+      await persistSettings();
+      const response = await fetch("/api/creator/commerce/test", { method: "POST" });
+      const payload = await response.json();
+
+      if (!response.ok || !payload.ok) {
+        throw new Error(payload.reason || "Gagal test commerce snapshot");
+      }
+
+      pushToast({
+        title: payload.summary || "Commerce snapshot berhasil diakses",
+        tone: "success"
+      });
+    } catch (error) {
+      pushToast({
+        title: error instanceof Error ? error.message : "Gagal test commerce snapshot",
+        tone: "error"
+      });
+    }
+  }
+
   async function handleConnectLinkedIn() {
     try {
       await persistSettings();
@@ -585,6 +614,25 @@ export function SettingsClient() {
     } catch (error) {
       pushToast({
         title: error instanceof Error ? error.message : "Gagal membuka LinkedIn OAuth",
+        tone: "error"
+      });
+    }
+  }
+
+  async function handleConnectThreads() {
+    try {
+      await persistSettings();
+      const response = await fetch("/api/social/threads/auth-url", { method: "POST" });
+      const payload = await response.json();
+
+      if (!response.ok || !payload.ok || !payload.url) {
+        throw new Error(payload.reason || "Gagal membuat Threads OAuth URL");
+      }
+
+      window.location.href = String(payload.url);
+    } catch (error) {
+      pushToast({
+        title: error instanceof Error ? error.message : "Gagal membuka Threads OAuth",
         tone: "error"
       });
     }
@@ -1381,6 +1429,14 @@ export function SettingsClient() {
               <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
                 <button
                   type="button"
+                  onClick={() => void handleConnectThreads()}
+                  disabled={saving || loading}
+                  className="rounded-2xl bg-slate-950 px-4 py-3 text-sm font-medium text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  Connect Threads OAuth
+                </button>
+                <button
+                  type="button"
                   onClick={() => void handleTestThreadsConnection()}
                   disabled={testingThreads || saving || loading}
                   className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-medium text-slate-800 transition hover:border-slate-950 hover:text-slate-950 disabled:cursor-not-allowed disabled:opacity-60"
@@ -1540,6 +1596,84 @@ export function SettingsClient() {
               className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-medium text-slate-800 transition hover:border-slate-950 hover:text-slate-950 disabled:cursor-not-allowed disabled:opacity-60"
             >
               {runningPublisher ? "Menjalankan..." : "Run Publisher Now"}
+            </button>
+          </div>
+        </section>
+
+        <section className="rounded-[32px] border border-slate-200/60 bg-white p-6 shadow-panel">
+          <div className="mb-5">
+            <h3 className="text-lg font-semibold text-slate-950">Commerce Snapshot</h3>
+            <p className="mt-1 text-sm text-slate-500">
+              Koneksi read-only ke katalog Zyho Store untuk draft Creator berbasis produk, stok, voucher, dan promo aktual.
+            </p>
+          </div>
+
+          <div className="space-y-4">
+            <CheckboxField
+              label="Aktifkan Commerce Snapshot"
+              checked={settings.commerceIntegrationEnabled}
+              onChange={(nextValue) =>
+                setSettings((current) => ({ ...current, commerceIntegrationEnabled: nextValue }))
+              }
+              description="Saat aktif, Jaka Creator boleh mengambil snapshot commerce yang sudah disanitasi dari endpoint Zyho Store."
+            />
+            <div className="grid gap-4 md:grid-cols-2">
+              <InputField
+                label="Commerce Base URL"
+                value={settings.commerceBaseUrl}
+                onChange={(nextValue) => setSettings((current) => ({ ...current, commerceBaseUrl: nextValue }))}
+                placeholder="https://zyho.store atau http://localhost:3001"
+              />
+              <InputField
+                label="Snapshot Path"
+                value={settings.commerceSnapshotPath}
+                onChange={(nextValue) => setSettings((current) => ({ ...current, commerceSnapshotPath: nextValue }))}
+                placeholder="/api/integrations/creator/catalog-snapshot"
+              />
+            </div>
+            <InputField
+              label="Integration Secret"
+              value={settings.commerceIntegrationSecret}
+              onChange={(nextValue) => setSettings((current) => ({ ...current, commerceIntegrationSecret: nextValue }))}
+              placeholder="CREATOR_INTEGRATION_SECRET"
+              type="password"
+            />
+            <div className="grid gap-4 md:grid-cols-2">
+              <InputField
+                label="Max Snapshot Age Minutes"
+                value={settings.commerceSnapshotMaxAgeMinutes}
+                onChange={(nextValue) =>
+                  setSettings((current) => ({ ...current, commerceSnapshotMaxAgeMinutes: nextValue }))
+                }
+                placeholder="30"
+              />
+              <SelectField
+                label="Stale Data Behavior"
+                value={settings.commerceStaleDataBehavior}
+                onChange={(nextValue) =>
+                  setSettings((current) => ({ ...current, commerceStaleDataBehavior: nextValue }))
+                }
+                options={[
+                  { label: "Hold post", value: "hold" },
+                  { label: "Fallback non-commerce", value: "fallback" }
+                ]}
+              />
+            </div>
+            <CheckboxField
+              label="Revalidasi Sebelum Publish"
+              checked={settings.commercePrePublishRevalidation}
+              onChange={(nextValue) =>
+                setSettings((current) => ({ ...current, commercePrePublishRevalidation: nextValue }))
+              }
+              description="Draft commerce akan dicek ulang sebelum publish agar harga, stok, promo, dan voucher tidak basi."
+            />
+            <button
+              type="button"
+              onClick={() => void handleTestCommerceConnection()}
+              disabled={saving || loading}
+              className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-medium text-slate-800 transition hover:border-slate-950 hover:text-slate-950 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              Test Commerce Snapshot
             </button>
           </div>
         </section>

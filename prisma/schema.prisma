@@ -98,6 +98,13 @@ model AppConfig {
   schedulerSecret     String   @default("")
   seoKeywordEnabled   Boolean  @default(true)
   seoKeywordList      String   @default("") @db.Text
+  commerceIntegrationEnabled Boolean @default(false)
+  commerceBaseUrl     String   @default("")
+  commerceSnapshotPath String  @default("/api/integrations/creator/catalog-snapshot")
+  commerceIntegrationSecret String @default("")
+  commerceSnapshotMaxAgeMinutes String @default("30")
+  commercePrePublishRevalidation Boolean @default(true)
+  commerceStaleDataBehavior String @default("hold")
   // Threads Scout
   threadsScoutEnabled          Boolean  @default(false)
   threadsScoutKeywords         String   @default("") @db.Text

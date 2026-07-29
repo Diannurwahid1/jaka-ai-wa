@@ -11,7 +11,8 @@
     "live:r2:inject": "node scripts/inject-r2-settings-live.mjs --execute",
     "prisma:migrate:deploy": "prisma migrate deploy",
     "live:r2:inject:prisma:dry": "node scripts/inject-r2-settings-live-prisma.mjs",
-    "live:r2:inject:prisma": "node scripts/inject-r2-settings-live-prisma.mjs --execute"
+    "live:r2:inject:prisma": "node scripts/inject-r2-settings-live-prisma.mjs --execute",
+    "creator:zyho:single-post": "node scripts/set-zyho-threads-single-post.mjs"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1032.0",

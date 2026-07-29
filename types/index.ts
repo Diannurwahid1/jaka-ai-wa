@@ -79,6 +79,13 @@ export type AppSettings = {
   schedulerSecret: string;
   seoKeywordEnabled: boolean;
   seoKeywordList: string;
+  commerceIntegrationEnabled: boolean;
+  commerceBaseUrl: string;
+  commerceSnapshotPath: string;
+  commerceIntegrationSecret: string;
+  commerceSnapshotMaxAgeMinutes: string;
+  commercePrePublishRevalidation: boolean;
+  commerceStaleDataBehavior: string;
   // Threads Scout — keyword scraping + auto reply
   threadsScoutEnabled: boolean;
   threadsScoutKeywords: string;
@@ -103,7 +110,7 @@ export type DashboardOverview = {
 export type DashboardConnectionStatus = "idle" | "checking" | "healthy" | "failed";
 
 export type DashboardConnectionCheck = {
-  key: "ai" | "wa" | "embedding" | "meta" | "threads" | "linkedin";
+  key: "ai" | "wa" | "embedding" | "meta" | "threads" | "linkedin" | "commerce";
   label: string;
   status: DashboardConnectionStatus;
   summary: string;

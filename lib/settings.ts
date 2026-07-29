@@ -86,12 +86,14 @@ function normalizeImageProvider(value?: string) {
 }
 
 function filterUnsupportedAppConfigFields<T extends Record<string, unknown>>(value: T): T {
-  if (prismaSupportsAppConfigField("imageProvider")) {
-    return value;
+  const copy = { ...value };
+
+  for (const key of Object.keys(copy)) {
+    if (key !== "businessId" && !prismaSupportsAppConfigField(key)) {
+      delete copy[key];
+    }
   }
 
-  const copy = { ...value };
-  delete (copy as Record<string, unknown>).imageProvider;
   return copy;
 }
 
@@ -165,6 +167,25 @@ const fallbackSettings: AppSettings = {
   schedulerSecret: process.env.SCHEDULER_SECRET ?? "",
   seoKeywordEnabled: (process.env.SEO_KEYWORD_ENABLED ?? "true").trim().toLowerCase() !== "false",
   seoKeywordList: process.env.SEO_KEYWORD_LIST ?? defaultSeoKeywordList,
+  commerceIntegrationEnabled:
+    (process.env.COMMERCE_INTEGRATION_ENABLED ?? process.env.CREATOR_COMMERCE_ENABLED ?? "")
+      .trim()
+      .toLowerCase() === "true",
+  commerceBaseUrl: process.env.COMMERCE_BASE_URL ?? process.env.CREATOR_COMMERCE_BASE_URL ?? process.env.NEXT_PUBLIC_STORE_URL ?? "",
+  commerceSnapshotPath:
+    process.env.COMMERCE_SNAPSHOT_PATH ??
+    process.env.CREATOR_COMMERCE_SNAPSHOT_PATH ??
+    "/api/integrations/creator/catalog-snapshot",
+  commerceIntegrationSecret:
+    process.env.COMMERCE_INTEGRATION_SECRET ?? process.env.CREATOR_INTEGRATION_SECRET ?? "",
+  commerceSnapshotMaxAgeMinutes:
+    process.env.COMMERCE_SNAPSHOT_MAX_AGE_MINUTES ?? process.env.CREATOR_COMMERCE_SNAPSHOT_MAX_AGE_MINUTES ?? "30",
+  commercePrePublishRevalidation:
+    (process.env.COMMERCE_PREPUBLISH_REVALIDATION ?? process.env.CREATOR_COMMERCE_PREPUBLISH_REVALIDATION ?? "true")
+      .trim()
+      .toLowerCase() !== "false",
+  commerceStaleDataBehavior:
+    process.env.COMMERCE_STALE_DATA_BEHAVIOR ?? process.env.CREATOR_COMMERCE_STALE_DATA_BEHAVIOR ?? "hold",
   // Threads Scout
   threadsScoutEnabled: (process.env.THREADS_SCOUT_ENABLED ?? "").trim().toLowerCase() === "true",
   threadsScoutKeywords: process.env.THREADS_SCOUT_KEYWORDS ?? "",
@@ -250,6 +271,20 @@ function sanitizeSettings(input: Partial<AppSettings>, current: AppSettings): Ap
     schedulerSecret: input.schedulerSecret?.trim() ?? current.schedulerSecret,
     seoKeywordEnabled: typeof input.seoKeywordEnabled === "boolean" ? input.seoKeywordEnabled : current.seoKeywordEnabled,
     seoKeywordList: input.seoKeywordList?.trim() ?? current.seoKeywordList,
+    commerceIntegrationEnabled:
+      typeof input.commerceIntegrationEnabled === "boolean"
+        ? input.commerceIntegrationEnabled
+        : current.commerceIntegrationEnabled,
+    commerceBaseUrl: input.commerceBaseUrl?.trim().replace(/\/$/, "") ?? current.commerceBaseUrl,
+    commerceSnapshotPath: input.commerceSnapshotPath?.trim() ?? current.commerceSnapshotPath,
+    commerceIntegrationSecret: input.commerceIntegrationSecret?.trim() ?? current.commerceIntegrationSecret,
+    commerceSnapshotMaxAgeMinutes:
+      input.commerceSnapshotMaxAgeMinutes?.trim() ?? current.commerceSnapshotMaxAgeMinutes,
+    commercePrePublishRevalidation:
+      typeof input.commercePrePublishRevalidation === "boolean"
+        ? input.commercePrePublishRevalidation
+        : current.commercePrePublishRevalidation,
+    commerceStaleDataBehavior: input.commerceStaleDataBehavior?.trim() ?? current.commerceStaleDataBehavior,
     // Threads Scout
     threadsScoutEnabled:
       typeof input.threadsScoutEnabled === "boolean" ? input.threadsScoutEnabled : current.threadsScoutEnabled,
