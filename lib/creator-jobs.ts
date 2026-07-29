@@ -32,6 +32,16 @@ type PlaygroundJobInput = {
   objective?: CreatorObjective;
   type?: CreatorDraftType;
   simulateUpload?: boolean;
+  commerce?: {
+    enabled?: boolean;
+    focus?: string;
+    productId?: string;
+    voucherId?: string;
+    promoId?: string;
+    angle?: string;
+    includeVoucher?: boolean;
+    includePromo?: boolean;
+  };
 };
 
 type CreatorJobResult =
@@ -43,6 +53,23 @@ type CreatorJobResult =
       kind: "playground";
       drafts: CreatorDraft[];
       simulations: CreatorPublishSimulation[];
+      commerce?: {
+        enabled: boolean;
+        storeName: string;
+        generatedAt: string;
+        counts: {
+          products: number;
+          vouchers: number;
+          promos: number;
+        };
+        focus: string;
+        angle: string;
+        selected: {
+          product?: Record<string, unknown>;
+          voucher?: Record<string, unknown>;
+          promo?: Record<string, unknown>;
+        };
+      };
     };
 
 export type CreatorAsyncJob = {
@@ -156,7 +183,8 @@ export function startPlaygroundCreatorJob(businessId: string, input: PlaygroundJ
         result: {
           kind: "playground",
           drafts: result.drafts,
-          simulations: result.simulations
+          simulations: result.simulations,
+          commerce: result.commerce
         }
       });
     } catch (error) {

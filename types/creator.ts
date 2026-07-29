@@ -250,6 +250,23 @@ export type CreatorAsyncJob =
         kind: "playground";
         drafts: CreatorDraft[];
         simulations: CreatorPublishSimulation[];
+        commerce?: {
+          enabled: boolean;
+          storeName: string;
+          generatedAt: string;
+          counts: {
+            products: number;
+            vouchers: number;
+            promos: number;
+          };
+          focus: string;
+          angle: string;
+          selected: {
+            product?: Record<string, unknown>;
+            voucher?: Record<string, unknown>;
+            promo?: Record<string, unknown>;
+          };
+        };
       };
       reason?: string;
     };

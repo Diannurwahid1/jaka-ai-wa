@@ -3,6 +3,7 @@ import { ObjectId } from "mongodb";
 import { postChatCompletion } from "@/lib/ai-client";
 import { currentBusinessId, runInBusinessContext } from "@/lib/business-context";
 import { getBusinessProfileById } from "@/lib/business";
+import { CommerceSnapshot, fetchCommerceSnapshot } from "@/lib/commerce-snapshot";
 import { generateConfiguredImage, hasImageGenerationConfig } from "@/lib/image-generation";
 import { getMongoDatabase } from "@/lib/mongodb";
 import { persistGeneratedImageToR2 } from "@/lib/r2";
@@ -226,6 +227,37 @@ type GeneratedVisualConcept = Pick<
   GeneratedDraftSeed,
   "visualPrompt" | "visualHeadline" | "visualSubline" | "visualCta" | "visualScene" | "visualLayout" | "visualMood"
 >;
+
+type CommercePlaygroundFocus = "auto" | "product" | "voucher" | "promo" | "bundle" | "education";
+
+type CommercePlaygroundInput = {
+  enabled?: boolean;
+  focus?: CommercePlaygroundFocus | string;
+  productId?: string;
+  voucherId?: string;
+  promoId?: string;
+  angle?: string;
+  includeVoucher?: boolean;
+  includePromo?: boolean;
+};
+
+type CommercePlaygroundContext = {
+  enabled: boolean;
+  storeName: string;
+  generatedAt: string;
+  counts: {
+    products: number;
+    vouchers: number;
+    promos: number;
+  };
+  focus: string;
+  angle: string;
+  selected: {
+    product?: Record<string, unknown>;
+    voucher?: Record<string, unknown>;
+    promo?: Record<string, unknown>;
+  };
+};
 
 type SeoKeywordConfig = {
   enabled: boolean;
@@ -1003,6 +1035,174 @@ SEO Keyword config:
 - List keyword SEO:
 ${config.keywords.map((keyword) => `  - ${keyword}`).join("\n")}
 `;
+}
+
+const commercePromptFields = [
+  "id",
+  "slug",
+  "title",
+  "name",
+  "shortDescription",
+  "description",
+  "url",
+  "price",
+  "salePrice",
+  "compareAtPrice",
+  "currency",
+  "stock",
+  "stockStatus",
+  "status",
+  "code",
+  "discount",
+  "discountType",
+  "discountValue",
+  "note",
+  "startsAt",
+  "endsAt",
+  "validUntil",
+  "productIds"
+];
+
+function asPlainRecord(value: unknown): Record<string, unknown> | undefined {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return undefined;
+  }
+
+  return value as Record<string, unknown>;
+}
+
+function trimCommerceText(value: unknown, maxLength = 260) {
+  if (value === null || value === undefined) {
+    return undefined;
+  }
+
+  const text = String(value).trim();
+  if (!text) {
+    return undefined;
+  }
+
+  return text.length > maxLength ? `${text.slice(0, maxLength - 1)}...` : text;
+}
+
+function pickCommerceFields(value: unknown) {
+  const record = asPlainRecord(value);
+  if (!record) {
+    return undefined;
+  }
+
+  const output: Record<string, unknown> = {};
+
+  for (const field of commercePromptFields) {
+    const raw = record[field];
+
+    if (Array.isArray(raw)) {
+      const values = raw
+        .map((item) => trimCommerceText(item, 120))
+        .filter(Boolean)
+        .slice(0, 8);
+
+      if (values.length > 0) {
+        output[field] = values;
+      }
+      continue;
+    }
+
+    const text = trimCommerceText(raw);
+    if (text) {
+      output[field] = text;
+    }
+  }
+
+  return Object.keys(output).length > 0 ? output : undefined;
+}
+
+function commerceItemId(value: unknown) {
+  const record = asPlainRecord(value);
+  return trimCommerceText(record?.id) || trimCommerceText(record?.slug) || trimCommerceText(record?.title) || "";
+}
+
+function findCommerceItem(items: unknown[] | undefined, selectedId?: string) {
+  const id = selectedId?.trim();
+  if (!id || !Array.isArray(items)) {
+    return undefined;
+  }
+
+  return items.find((item) => {
+    const record = asPlainRecord(item);
+    if (!record) {
+      return false;
+    }
+
+    return [record.id, record.slug, record.title, record.name].some((candidate) => trimCommerceText(candidate) === id);
+  });
+}
+
+function summarizeCommerceItems(items: unknown[] | undefined, selected: unknown | undefined, limit: number) {
+  const selectedId = commerceItemId(selected);
+  const records = (Array.isArray(items) ? items : [])
+    .filter((item) => !selectedId || commerceItemId(item) !== selectedId)
+    .slice(0, Math.max(0, limit - (selected ? 1 : 0)));
+  const ordered = selected ? [selected, ...records] : records;
+
+  return ordered.map((item) => pickCommerceFields(item)).filter(Boolean);
+}
+
+async function buildCommercePlaygroundInstruction(input?: CommercePlaygroundInput): Promise<{
+  instruction?: string;
+  context?: CommercePlaygroundContext;
+}> {
+  if (!input?.enabled) {
+    return {};
+  }
+
+  const result = await fetchCommerceSnapshot(getCreatorId());
+  const snapshot: CommerceSnapshot = result.snapshot;
+  const selectedProduct = findCommerceItem(snapshot.products, input.productId);
+  const selectedVoucher = findCommerceItem(snapshot.vouchers, input.voucherId);
+  const selectedPromo = findCommerceItem(snapshot.promos, input.promoId);
+  const focus = String(input.focus || "auto").trim() || "auto";
+  const angle = String(input.angle || "promo informatif").trim() || "promo informatif";
+  const storeName = snapshot.store?.name || "Zyho Store";
+  const selected = {
+    product: pickCommerceFields(selectedProduct),
+    voucher: pickCommerceFields(selectedVoucher),
+    promo: pickCommerceFields(selectedPromo)
+  };
+  const promptPayload = {
+    schemaVersion: snapshot.schemaVersion,
+    generatedAt: snapshot.generatedAt,
+    store: snapshot.store,
+    focus,
+    angle,
+    selected,
+    products: summarizeCommerceItems(snapshot.products, selectedProduct, 6),
+    vouchers: input.includeVoucher === false ? [] : summarizeCommerceItems(snapshot.vouchers, selectedVoucher, 8),
+    promos: input.includePromo === false ? [] : summarizeCommerceItems(snapshot.promos, selectedPromo, 6)
+  };
+
+  return {
+    context: {
+      enabled: true,
+      storeName,
+      generatedAt: snapshot.generatedAt,
+      counts: result.counts,
+      focus,
+      angle,
+      selected
+    },
+    instruction: `Konteks commerce live dari ${storeName}.
+Gunakan data JSON berikut sebagai sumber fakta utama. Jangan mengarang harga, stok, benefit, kode voucher, masa berlaku, atau nama produk yang tidak ada di data. Jika code voucher bernilai kosong/null, jelaskan sebagai benefit/offer setelah daftar, bukan kode yang bisa langsung dipakai. Jika stok/status tidak tersedia, jangan klaim stok.
+
+Commerce data:
+${JSON.stringify(promptPayload, null, 2)}
+
+Arahan konten:
+- Buat konten Threads single post yang terasa natural, bukan katalog kaku.
+- Fokus commerce: ${focus}.
+- Angle: ${angle}.
+- Masukkan CTA yang mengarah ke zyho.store atau URL produk jika tersedia.
+- Tetap edukatif/informatif agar cocok untuk mahasiswa, developer, kreator, dan profesional.`
+  };
 }
 
 function compactWords(value: string, maxWords: number, fallback: string) {
@@ -2960,15 +3160,22 @@ export async function runCreatorPlayground(input?: {
   objective?: CreatorObjective;
   type?: CreatorDraftType;
   simulateUpload?: boolean;
+  commerce?: CommercePlaygroundInput;
 }) {
-  const drafts = await simulateCreatorDrafts(input);
+  const commerce = await buildCommercePlaygroundInstruction(input?.commerce);
+  const topic = [input?.topic?.trim(), commerce.instruction].filter(Boolean).join("\n\n");
+  const drafts = await simulateCreatorDrafts({
+    ...input,
+    topic: topic || input?.topic
+  });
   const simulations = input?.simulateUpload
     ? await Promise.all(drafts.map((draft) => simulatePlatformPublish(getCreatorId(), draft)))
     : [];
 
   return {
     drafts,
-    simulations
+    simulations,
+    commerce: commerce.context
   };
 }
 

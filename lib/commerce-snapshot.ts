@@ -1,6 +1,6 @@
 import { readSettings } from "@/lib/settings";
 
-type CommerceSnapshot = {
+export type CommerceSnapshot = {
   schemaVersion: string;
   generatedAt: string;
   store?: {
@@ -18,7 +18,7 @@ type CommerceSnapshotCacheEntry = {
   fetchedAt: number;
 };
 
-type CommerceSnapshotResult = {
+export type CommerceSnapshotResult = {
   snapshot: CommerceSnapshot;
   status: number;
   etag?: string;

@@ -50,6 +50,36 @@ const draftTypeOptions: Array<{ value: CreatorDraftType; label: string }> = [
   { value: "thread_series", label: "Thread series" }
 ];
 
+type CommerceSnapshotPreview = {
+  schemaVersion: string;
+  generatedAt: string;
+  store?: {
+    name?: string;
+    baseUrl?: string;
+  };
+  products?: Array<Record<string, unknown>>;
+  vouchers?: Array<Record<string, unknown>>;
+  promos?: Array<Record<string, unknown>>;
+};
+
+const commerceFocusOptions = [
+  { value: "auto", label: "Auto pilih peluang terbaik" },
+  { value: "product", label: "Produk spesifik" },
+  { value: "voucher", label: "Voucher / diskon" },
+  { value: "promo", label: "Promo campaign" },
+  { value: "bundle", label: "Bundle offer" },
+  { value: "education", label: "Edukasi soft-sell" }
+];
+
+const commerceAngleOptions = [
+  { value: "promo informatif", label: "Promo informatif" },
+  { value: "problem-solution", label: "Problem-solution" },
+  { value: "student productivity", label: "Mahasiswa produktif" },
+  { value: "developer workflow", label: "Developer workflow" },
+  { value: "creator workflow", label: "Creator workflow" },
+  { value: "urgency tanpa hard selling", label: "Urgency halus" }
+];
+
 const platformMeta: Record<CreatorPlatform, { label: string; description: string; imageFriendly: boolean }> = {
   threads: {
     label: "Threads",
@@ -178,6 +208,18 @@ function formatJobStatus(status: CreatorAsyncJob["status"]) {
   }
 
   return "Gagal";
+}
+
+function commerceItemValue(item: Record<string, unknown>) {
+  return String(item.id ?? item.slug ?? item.title ?? item.name ?? "").trim();
+}
+
+function commerceItemLabel(item: Record<string, unknown>, fallback: string) {
+  const title = String(item.title ?? item.name ?? item.slug ?? item.id ?? fallback).trim();
+  const code = String(item.code ?? "").trim();
+  const discount = String(item.discount ?? item.discountValue ?? "").trim();
+
+  return [title, code || discount].filter(Boolean).join(" . ");
 }
 
 function getDisplayImageUrl(draft: CreatorDraft) {
@@ -311,10 +353,20 @@ export function CreatorClient({ platform }: { platform: CreatorPlatform }) {
     tone: "sharp" as CreatorTone,
     objective: "engagement" as CreatorObjective,
     type: platform === "threads" ? "thread_series" as CreatorDraftType : "single_post" as CreatorDraftType,
-    simulateUpload: true
+    simulateUpload: true,
+    commerceEnabled: platform === "threads",
+    commerceFocus: "auto",
+    commerceProductId: "",
+    commerceVoucherId: "",
+    commercePromoId: "",
+    commerceAngle: "promo informatif",
+    commerceIncludeVoucher: true,
+    commerceIncludePromo: true
   });
   const [playgroundDrafts, setPlaygroundDrafts] = useState<CreatorDraft[]>([]);
   const [playgroundSimulations, setPlaygroundSimulations] = useState<CreatorPublishSimulation[]>([]);
+  const [commerceSnapshot, setCommerceSnapshot] = useState<CommerceSnapshotPreview | null>(null);
+  const [playgroundCommerceContext, setPlaygroundCommerceContext] = useState<NonNullable<Extract<CreatorAsyncJob, { kind: "playground" }>["result"]>["commerce"] | null>(null);
   const [activeJob, setActiveJob] = useState<CreatorAsyncJob | null>(null);
   const [topicScoutForm, setTopicScoutForm] = useState({
     query: "",
@@ -497,6 +549,34 @@ export function CreatorClient({ platform }: { platform: CreatorPlatform }) {
     return payload;
   }
 
+  async function handleLoadCommerceSnapshot() {
+    setBusyId("commerce-snapshot");
+
+    try {
+      const response = await fetch("/api/creator/commerce/snapshot", {
+        cache: "no-store"
+      });
+      const payload = await response.json();
+
+      if (!response.ok || !payload.ok) {
+        throw new Error(payload.reason || "Gagal load snapshot Zyho Store");
+      }
+
+      setCommerceSnapshot(payload.snapshot as CommerceSnapshotPreview);
+      pushToast({
+        title: `Snapshot Zyho loaded: ${payload.counts.products} produk, ${payload.counts.vouchers} voucher, ${payload.counts.promos} promo`,
+        tone: "success"
+      });
+    } catch (error) {
+      pushToast({
+        title: error instanceof Error ? error.message : "Gagal load snapshot Zyho Store",
+        tone: "error"
+      });
+    } finally {
+      setBusyId(null);
+    }
+  }
+
   async function pollCreatorJob(jobId: string) {
     while (true) {
       const response = await fetch(`/api/creator/jobs/${encodeURIComponent(jobId)}`, {
@@ -588,6 +668,7 @@ export function CreatorClient({ platform }: { platform: CreatorPlatform }) {
     event.preventDefault();
     setBusyId("playground");
     setActiveJob(null);
+    setPlaygroundCommerceContext(null);
 
     try {
       const payload = await postJson("/api/creator/playground", {
@@ -598,13 +679,27 @@ export function CreatorClient({ platform }: { platform: CreatorPlatform }) {
         tone: playgroundForm.tone,
         objective: playgroundForm.objective,
         type: playgroundForm.type,
-        simulateUpload: playgroundForm.simulateUpload
+        simulateUpload: playgroundForm.simulateUpload,
+        commerce:
+          platform === "threads" && playgroundForm.commerceEnabled
+            ? {
+                enabled: true,
+                focus: playgroundForm.commerceFocus,
+                productId: playgroundForm.commerceProductId,
+                voucherId: playgroundForm.commerceVoucherId,
+                promoId: playgroundForm.commercePromoId,
+                angle: playgroundForm.commerceAngle,
+                includeVoucher: playgroundForm.commerceIncludeVoucher,
+                includePromo: playgroundForm.commerceIncludePromo
+              }
+            : { enabled: false }
       });
       const job = await pollCreatorJob(String(payload.jobId));
 
       if (job.result?.kind === "playground") {
         setPlaygroundDrafts(job.result.drafts);
         setPlaygroundSimulations(job.result.simulations || []);
+        setPlaygroundCommerceContext(job.result.commerce || null);
       }
       pushToast({ title: `Simulasi ${platformMeta[platform].label} berhasil dibuat`, tone: "success" });
     } catch (error) {
@@ -1049,12 +1144,131 @@ export function CreatorClient({ platform }: { platform: CreatorPlatform }) {
                   <select value={playgroundForm.objective} onChange={(event) => setPlaygroundForm((current) => ({ ...current, objective: event.target.value as CreatorObjective }))} className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900">{objectiveOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select>
                   <select value={playgroundForm.type} onChange={(event) => setPlaygroundForm((current) => ({ ...current, type: event.target.value as CreatorDraftType }))} className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900">{draftTypeOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select>
                 </div>
+                {platform === "threads" ? (
+                  <div className="rounded-3xl border border-emerald-100 bg-emerald-50/70 p-4">
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                      <div>
+                        <h4 className="text-sm font-semibold text-emerald-950">Zyho Store Commerce Playground</h4>
+                        <p className="mt-1 text-xs leading-5 text-emerald-800">
+                          Ambil snapshot produk, voucher, dan promo live dari zyho.store untuk membuat Threads single post yang faktual.
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => void handleLoadCommerceSnapshot()}
+                        disabled={busyId === "commerce-snapshot"}
+                        className="rounded-2xl border border-emerald-200 bg-white px-4 py-2 text-xs font-semibold text-emerald-900 disabled:opacity-60"
+                      >
+                        {busyId === "commerce-snapshot" ? "Loading snapshot..." : "Load Live Snapshot"}
+                      </button>
+                    </div>
+                    <div className="mt-4 grid gap-4 md:grid-cols-2">
+                      <label className="flex items-center gap-3 rounded-2xl border border-emerald-100 bg-white px-4 py-3 text-sm text-emerald-900">
+                        <input
+                          type="checkbox"
+                          checked={playgroundForm.commerceEnabled}
+                          onChange={(event) => setPlaygroundForm((current) => ({ ...current, commerceEnabled: event.target.checked }))}
+                        />
+                        Pakai data commerce Zyho
+                      </label>
+                      <select
+                        value={playgroundForm.commerceFocus}
+                        onChange={(event) => setPlaygroundForm((current) => ({ ...current, commerceFocus: event.target.value }))}
+                        className="rounded-2xl border border-emerald-100 bg-white px-4 py-3 text-sm text-emerald-950"
+                      >
+                        {commerceFocusOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+                      </select>
+                      <select
+                        value={playgroundForm.commerceAngle}
+                        onChange={(event) => setPlaygroundForm((current) => ({ ...current, commerceAngle: event.target.value }))}
+                        className="rounded-2xl border border-emerald-100 bg-white px-4 py-3 text-sm text-emerald-950"
+                      >
+                        {commerceAngleOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+                      </select>
+                      <select
+                        value={playgroundForm.commerceProductId}
+                        onChange={(event) => setPlaygroundForm((current) => ({ ...current, commerceProductId: event.target.value }))}
+                        className="rounded-2xl border border-emerald-100 bg-white px-4 py-3 text-sm text-emerald-950"
+                      >
+                        <option value="">Auto produk terbaik</option>
+                        {(commerceSnapshot?.products || []).map((item, index) => {
+                          const value = commerceItemValue(item);
+                          return value ? <option key={value} value={value}>{commerceItemLabel(item, `Produk ${index + 1}`)}</option> : null;
+                        })}
+                      </select>
+                      <select
+                        value={playgroundForm.commerceVoucherId}
+                        onChange={(event) => setPlaygroundForm((current) => ({ ...current, commerceVoucherId: event.target.value }))}
+                        className="rounded-2xl border border-emerald-100 bg-white px-4 py-3 text-sm text-emerald-950"
+                      >
+                        <option value="">Auto voucher relevan</option>
+                        {(commerceSnapshot?.vouchers || []).map((item, index) => {
+                          const value = commerceItemValue(item);
+                          return value ? <option key={value} value={value}>{commerceItemLabel(item, `Voucher ${index + 1}`)}</option> : null;
+                        })}
+                      </select>
+                      <select
+                        value={playgroundForm.commercePromoId}
+                        onChange={(event) => setPlaygroundForm((current) => ({ ...current, commercePromoId: event.target.value }))}
+                        className="rounded-2xl border border-emerald-100 bg-white px-4 py-3 text-sm text-emerald-950"
+                      >
+                        <option value="">Auto promo aktif</option>
+                        {(commerceSnapshot?.promos || []).map((item, index) => {
+                          const value = commerceItemValue(item);
+                          return value ? <option key={value} value={value}>{commerceItemLabel(item, `Promo ${index + 1}`)}</option> : null;
+                        })}
+                      </select>
+                    </div>
+                    <div className="mt-4 grid gap-3 md:grid-cols-2">
+                      <label className="flex items-center gap-3 rounded-2xl bg-white px-4 py-3 text-sm text-emerald-900">
+                        <input
+                          type="checkbox"
+                          checked={playgroundForm.commerceIncludeVoucher}
+                          onChange={(event) => setPlaygroundForm((current) => ({ ...current, commerceIncludeVoucher: event.target.checked }))}
+                        />
+                        Sertakan voucher publik
+                      </label>
+                      <label className="flex items-center gap-3 rounded-2xl bg-white px-4 py-3 text-sm text-emerald-900">
+                        <input
+                          type="checkbox"
+                          checked={playgroundForm.commerceIncludePromo}
+                          onChange={(event) => setPlaygroundForm((current) => ({ ...current, commerceIncludePromo: event.target.checked }))}
+                        />
+                        Sertakan promo aktif
+                      </label>
+                    </div>
+                    {commerceSnapshot ? (
+                      <div className="mt-4 rounded-2xl bg-white px-4 py-3 text-xs leading-5 text-emerald-900">
+                        <p className="font-semibold">{commerceSnapshot.store?.name || "Zyho Store"} snapshot loaded</p>
+                        <p>
+                          Generated: {formatDateTime(commerceSnapshot.generatedAt)} . Produk {(commerceSnapshot.products || []).length} . Voucher {(commerceSnapshot.vouchers || []).length} . Promo {(commerceSnapshot.promos || []).length}
+                        </p>
+                      </div>
+                    ) : null}
+                  </div>
+                ) : null}
               </div>
               <button type="submit" disabled={busyId === "playground"} className="mt-5 rounded-2xl bg-slate-950 px-5 py-3 text-sm font-medium text-white disabled:opacity-60">{busyId === "playground" ? "Memproses simulasi..." : "Run Playground"}</button>
             </form>
 
             <div className={sectionClassName}>
               <h3 className="text-lg font-semibold text-slate-950">Preview Result</h3>
+              {playgroundCommerceContext ? (
+                <div className="mt-4 rounded-3xl border border-emerald-100 bg-emerald-50 px-4 py-3 text-sm leading-6 text-emerald-950">
+                  <p className="font-semibold">{playgroundCommerceContext.storeName} commerce context dipakai</p>
+                  <p className="text-xs text-emerald-800">
+                    Snapshot {formatDateTime(playgroundCommerceContext.generatedAt)} . Fokus {playgroundCommerceContext.focus} . Angle {playgroundCommerceContext.angle}
+                  </p>
+                  <p className="text-xs text-emerald-800">
+                    Produk {playgroundCommerceContext.counts.products} . Voucher {playgroundCommerceContext.counts.vouchers} . Promo {playgroundCommerceContext.counts.promos}
+                  </p>
+                  {Object.values(playgroundCommerceContext.selected).some(Boolean) ? (
+                    <pre className="mt-3 overflow-x-auto whitespace-pre-wrap rounded-2xl bg-white px-3 py-3 text-xs text-emerald-900">
+                      {JSON.stringify(playgroundCommerceContext.selected, null, 2)}
+                    </pre>
+                  ) : null}
+                </div>
+              ) : null}
               <div className="mt-5 space-y-4">
                 {playgroundDrafts.length === 0 ? (
                   <div className="rounded-3xl bg-slate-50 px-4 py-6 text-sm text-slate-500">
