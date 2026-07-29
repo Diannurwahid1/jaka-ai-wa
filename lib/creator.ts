@@ -1230,6 +1230,7 @@ function commerceIntentInstruction(focus: string, angle: string) {
 - Boleh menyebut restock, voucher, stok, benefit produk.
 - Wajib tutup dengan CTA halus yang menyebut zyho.store atau URL produk. Jangan sampai caption promo tanpa arahan ke web.
 - CTA cukup 1 kalimat pendek, contoh: "yang butuh bisa cek zyho.store" atau "detailnya ada di zyho.store".
+- Negative prompt: jangan menyebut garansi, warranty, refund, klaim, komplain, after-sales, jaminan, atau dukungan pasca pembelian.
 - Tetap jangan hard selling.`;
   }
 
@@ -1361,6 +1362,7 @@ Arahan konten:
 - Pakai 1 sampai 2 emoji total dari kandidat ini kalau cocok: ${variation.emojiCandidates.join(" ")}. Jangan lebih dari 2 emoji.
 - Jangan sebut terlalu banyak keyword. Hindari frasa SEO seperti "tools ai untuk mahasiswa" berulang.
 - Jangan gunakan kata agresif seperti "abal-abal", "investasi", "revenue", atau klaim berlebihan.
+- Jangan pernah menyebut garansi/warranty/refund/klaim/after-sales di caption.
 - ${commerceStyleInstruction(style)}
 - ${intentInstruction}
 - Jika intent edukasi/informative, abaikan contoh promo/restock/CTA di bawah; hasil akhir harus murni edukasi tanpa jualan.
