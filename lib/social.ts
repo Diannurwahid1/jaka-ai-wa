@@ -70,6 +70,27 @@ function clipText(value: string, maxLength: number) {
   return `${trimmed.slice(0, Math.max(0, maxLength - 1)).trimEnd()}...`;
 }
 
+function resolveThreadsTopicTag(draft: CreatorDraft, text: string) {
+  const haystack = [
+    draft.topic,
+    draft.caption,
+    text,
+    ...draft.parts.map((part) => part.content)
+  ]
+    .join(" ")
+    .toLowerCase();
+
+  if (/\bgemini\b|google ai|google ai pro/.test(haystack)) {
+    return "Gemini";
+  }
+
+  if (/chatgpt|chat gpt|openai/.test(haystack)) {
+    return "ChatGPT";
+  }
+
+  return "AI";
+}
+
 function buildDraftText(draft: CreatorDraft) {
   const fallback = draft.parts.map((part) => part.content).join("\n\n").trim();
   return clipText(draft.caption?.trim() || fallback || draft.topic.trim(), 2800);
@@ -880,14 +901,17 @@ export async function simulatePlatformPublish(businessId: string, draft: Creator
     try {
       const config = ensureThreadsConfig(settings);
       const chain = buildThreadChainTexts(draft);
+      const topicTag = resolveThreadsTopicTag(draft, chain.join("\n\n"));
       const requestPreview = {
         baseUrl: threadsGraphUrl(settings, `/${config.userId}/threads`),
         publishUrl: threadsGraphUrl(settings, `/${config.userId}/threads_publish`),
+        topic_tag: topicTag,
         posts: chain.map((content, index) => ({
           step: index === 0 ? "main" : `reply_${index}`,
           create: {
             media_type: getThreadsMediaType(draft, index),
             text: content,
+            topic_tag: index === 0 ? topicTag : undefined,
             image_url: index === 0 ? imageUrl || undefined : undefined,
             reply_to_id: draft.type === "thread_series" && index > 0 ? `<thread_id_${index}>` : undefined
           },
@@ -1032,6 +1056,7 @@ export async function publishDraftToPlatform(
   if (draft.platform === "threads") {
     const config = ensureThreadsConfig(settings);
     const chain = buildThreadChainTexts(draft);
+    const topicTag = resolveThreadsTopicTag(draft, chain.join("\n\n"));
     const publishedIds: string[] = [];
 
     for (const [index, content] of chain.entries()) {
@@ -1043,6 +1068,10 @@ export async function publishDraftToPlatform(
 
       if (index === 0 && imageUrl) {
         createParams.set("image_url", imageUrl);
+      }
+
+      if (index === 0 && topicTag) {
+        createParams.set("topic_tag", topicTag);
       }
 
       if (draft.type === "thread_series" && index > 0) {
@@ -1094,6 +1123,7 @@ export async function publishDraftToPlatform(
       externalPostId: publishedIds[0],
       requestPreview: {
         userId: config.userId,
+        topicTag,
         posts: chain,
         publishedIds
       }
