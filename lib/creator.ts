@@ -2136,19 +2136,26 @@ function buildDraftContentFingerprint(input: { caption?: string; parts?: Creator
   return normalizeDraftContentForDedupe(buildDraftContentText(input));
 }
 
-function draftContentMatchesFingerprint(document: CreatorDraftDocument, fingerprint: string) {
-  if (!fingerprint) {
+function buildDraftTopicFingerprint(topic?: string) {
+  return normalizeDraftContentForDedupe(topic ?? "");
+}
+
+function draftContentMatchesFingerprint(document: CreatorDraftDocument, fingerprint: string, topicFingerprint?: string) {
+  if (!fingerprint && !topicFingerprint) {
     return false;
   }
 
-  return (
-    document.contentFingerprint === fingerprint ||
-    buildDraftContentFingerprint({
-      caption: document.caption,
-      parts: document.parts,
-      topic: document.topic
-    }) === fingerprint
-  );
+  const contentMatches =
+    Boolean(fingerprint) &&
+    (document.contentFingerprint === fingerprint ||
+      buildDraftContentFingerprint({
+        caption: document.caption,
+        parts: document.parts,
+        topic: document.topic
+      }) === fingerprint);
+  const topicMatches = Boolean(topicFingerprint) && buildDraftTopicFingerprint(document.topic) === topicFingerprint;
+
+  return contentMatches || topicMatches;
 }
 
 async function findDuplicateDraftContent(
@@ -2156,11 +2163,12 @@ async function findDuplicateDraftContent(
   input: {
     platform: CreatorPlatform;
     fingerprint: string;
+    topicFingerprint?: string;
     excludeDraftId?: string;
     statuses?: CreatorDraft["status"][];
   }
 ) {
-  if (!input.fingerprint) {
+  if (!input.fingerprint && !input.topicFingerprint) {
     return null;
   }
 
@@ -2188,7 +2196,11 @@ async function findDuplicateDraftContent(
     .limit(200)
     .toArray();
 
-  return recentDrafts.find((document) => draftContentMatchesFingerprint(document, input.fingerprint)) ?? null;
+  return (
+    recentDrafts.find((document) =>
+      draftContentMatchesFingerprint(document, input.fingerprint, input.topicFingerprint)
+    ) ?? null
+  );
 }
 
 async function scheduleGeneratedDraftsForPublish(createdDrafts: CreatorDraft[], profile: CreatorProfile, detail: string) {
@@ -3729,7 +3741,8 @@ export async function generateCreatorDrafts(input?: {
     });
     const duplicateDraft = await findDuplicateDraftContent(collections, {
       platform,
-      fingerprint: contentFingerprint
+      fingerprint: contentFingerprint,
+      topicFingerprint: buildDraftTopicFingerprint(topicForDraft)
     });
 
     if (duplicateDraft) {
@@ -3883,6 +3896,7 @@ export async function publishCreatorDraft(
   const postedDuplicate = await findDuplicateDraftContent(collections, {
     platform: document.platform,
     fingerprint: contentFingerprint,
+    topicFingerprint: buildDraftTopicFingerprint(document.topic),
     excludeDraftId: document.draftId,
     statuses: ["posted"]
   });
