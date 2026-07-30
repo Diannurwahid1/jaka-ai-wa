@@ -46,7 +46,8 @@ const creatorCollectionNames = {
   approvalLogs: "creator_approval_logs",
   publishLogs: "creator_publish_logs",
   topicBriefs: "creator_topic_briefs",
-  generationRetries: "creator_generation_retries"
+  generationRetries: "creator_generation_retries",
+  generationLocks: "creator_generation_locks"
 } as const;
 
 const platformOrder: CreatorPlatform[] = ["threads", "instagram", "linkedin", "facebook"];
@@ -224,6 +225,17 @@ type CreatorGenerationRetryDocument = {
   updatedAt: Date;
   resolvedAt?: Date;
   resolvedDraftIds?: string[];
+};
+
+type CreatorGenerationLockDocument = {
+  _id: string;
+  creatorId: string;
+  platform: CreatorPlatform;
+  slotKey: string;
+  slotLabel: string;
+  slotTime: string;
+  createdAt: Date;
+  expiresAt: Date;
 };
 
 type GeneratedDraftSeed = {
@@ -1629,8 +1641,87 @@ async function getCollections() {
     approvalLogs: db.collection<CreatorApprovalLogDocument>(creatorCollectionNames.approvalLogs),
     publishLogs: db.collection<CreatorPublishLogDocument>(creatorCollectionNames.publishLogs),
     topicBriefs: db.collection<CreatorTopicBriefDocument>(creatorCollectionNames.topicBriefs),
-    generationRetries: db.collection<CreatorGenerationRetryDocument>(creatorCollectionNames.generationRetries)
+    generationRetries: db.collection<CreatorGenerationRetryDocument>(creatorCollectionNames.generationRetries),
+    generationLocks: db.collection<CreatorGenerationLockDocument>(creatorCollectionNames.generationLocks)
   };
+}
+
+type CreatorCollections = Awaited<ReturnType<typeof getCollections>>;
+
+function buildDraftGenerationLockId(creatorId: string, platform: CreatorPlatform, slotKey: string) {
+  return `${creatorId}:${platform}:${slotKey}`;
+}
+
+function isDuplicateKeyError(error: unknown) {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    "code" in error &&
+    (error as { code?: number }).code === 11000
+  );
+}
+
+async function tryAcquireDraftGenerationLock(
+  collections: CreatorCollections,
+  input: {
+    profile: CreatorProfile;
+    slot: CreatorScheduleSlot;
+    slotKey: string;
+  }
+) {
+  const lockId = buildDraftGenerationLockId(getCreatorId(), input.profile.platform, input.slotKey);
+  const timestamp = now();
+  const lockDocument: CreatorGenerationLockDocument = {
+    _id: lockId,
+    creatorId: getCreatorId(),
+    platform: input.profile.platform,
+    slotKey: input.slotKey,
+    slotLabel: input.slot.label,
+    slotTime: input.slot.time,
+    createdAt: timestamp,
+    expiresAt: new Date(timestamp.getTime() + 30 * 60 * 1000)
+  };
+
+  try {
+    await collections.generationLocks.insertOne(lockDocument);
+    return true;
+  } catch (error) {
+    if (!isDuplicateKeyError(error)) {
+      throw error;
+    }
+  }
+
+  const existingLock = await collections.generationLocks.findOne({ _id: lockId });
+  if (!existingLock || existingLock.expiresAt.getTime() > Date.now()) {
+    return false;
+  }
+
+  await collections.generationLocks.deleteOne({ _id: lockId, expiresAt: { $lte: now() } });
+
+  try {
+    await collections.generationLocks.insertOne({
+      ...lockDocument,
+      createdAt: now(),
+      expiresAt: new Date(Date.now() + 30 * 60 * 1000)
+    });
+    return true;
+  } catch (error) {
+    if (isDuplicateKeyError(error)) {
+      return false;
+    }
+
+    throw error;
+  }
+}
+
+async function releaseDraftGenerationLock(
+  collections: CreatorCollections,
+  platform: CreatorPlatform,
+  slotKey: string
+) {
+  await collections.generationLocks.deleteOne({
+    _id: buildDraftGenerationLockId(getCreatorId(), platform, slotKey)
+  });
 }
 
 function mapProfile(document: CreatorProfileDocument): CreatorProfile {
@@ -3867,6 +3958,12 @@ export async function processDueCreatorDraftGenerations(options?: {
       continue;
     }
 
+    const lockAcquired = await tryAcquireDraftGenerationLock(collections, dueEntry);
+    if (!lockAcquired) {
+      skipped += 1;
+      continue;
+    }
+
     try {
       const drafts = await generateCreatorDrafts({
         platform: dueEntry.profile.platform,
@@ -3937,6 +4034,7 @@ export async function processDueCreatorDraftGenerations(options?: {
         { upsert: true }
       );
 
+      await releaseDraftGenerationLock(collections, dueEntry.profile.platform, dueEntry.slotKey);
       failed += 1;
     }
   }
