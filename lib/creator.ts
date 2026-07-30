@@ -143,6 +143,7 @@ type CreatorDraftDocument = {
   lastApprovalError?: string;
   generationMode?: "manual" | "scheduled";
   generationSlotKey?: string;
+  contentFingerprint?: string;
   approvedAt?: Date;
   rejectedAt?: Date;
   scheduledFor?: Date;
@@ -2062,9 +2063,11 @@ async function pickNextScheduleSlot(profile: CreatorProfile) {
 }
 
 async function listUsedScheduleSlots(platform: CreatorPlatform) {
-  const { drafts } = await getCollections();
+  const collections = await getCollections();
+  const { drafts } = collections;
   const scheduledDrafts = await drafts
     .find({
+      creatorId: getCreatorId(),
       platform,
       status: "scheduled",
       scheduledFor: { $exists: true }
@@ -2105,12 +2108,96 @@ function buildCommerceInputFromSlot(slot: CreatorScheduleSlot): CommercePlaygrou
   };
 }
 
+function normalizeDraftContentForDedupe(value: string) {
+  return value
+    .toLowerCase()
+    .replace(/https?:\/\/\S+/g, "")
+    .replace(/zyho\.store/g, "")
+    .replace(/[^\p{L}\p{N}\s]/gu, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function buildDraftContentText(input: { caption?: string; parts?: CreatorThreadPart[]; topic?: string }) {
+  const caption = input.caption?.trim();
+  if (caption) {
+    return caption;
+  }
+
+  const partsText = input.parts?.map((part) => part.content).join("\n\n").trim();
+  if (partsText) {
+    return partsText;
+  }
+
+  return input.topic?.trim() ?? "";
+}
+
+function buildDraftContentFingerprint(input: { caption?: string; parts?: CreatorThreadPart[]; topic?: string }) {
+  return normalizeDraftContentForDedupe(buildDraftContentText(input));
+}
+
+function draftContentMatchesFingerprint(document: CreatorDraftDocument, fingerprint: string) {
+  if (!fingerprint) {
+    return false;
+  }
+
+  return (
+    document.contentFingerprint === fingerprint ||
+    buildDraftContentFingerprint({
+      caption: document.caption,
+      parts: document.parts,
+      topic: document.topic
+    }) === fingerprint
+  );
+}
+
+async function findDuplicateDraftContent(
+  collections: CreatorCollections,
+  input: {
+    platform: CreatorPlatform;
+    fingerprint: string;
+    excludeDraftId?: string;
+    statuses?: CreatorDraft["status"][];
+  }
+) {
+  if (!input.fingerprint) {
+    return null;
+  }
+
+  const statuses = input.statuses ?? ["draft", "pending_approval", "approved", "scheduled", "posted"];
+  const directMatch = await collections.drafts.findOne({
+    creatorId: getCreatorId(),
+    platform: input.platform,
+    ...(input.excludeDraftId ? { draftId: { $ne: input.excludeDraftId } } : {}),
+    status: { $in: statuses },
+    contentFingerprint: input.fingerprint
+  });
+
+  if (directMatch) {
+    return directMatch;
+  }
+
+  const recentDrafts = await collections.drafts
+    .find({
+      creatorId: getCreatorId(),
+      platform: input.platform,
+      ...(input.excludeDraftId ? { draftId: { $ne: input.excludeDraftId } } : {}),
+      status: { $in: statuses }
+    })
+    .sort({ createdAt: -1 })
+    .limit(200)
+    .toArray();
+
+  return recentDrafts.find((document) => draftContentMatchesFingerprint(document, input.fingerprint)) ?? null;
+}
+
 async function scheduleGeneratedDraftsForPublish(createdDrafts: CreatorDraft[], profile: CreatorProfile, detail: string) {
   if (createdDrafts.length === 0) {
     return 0;
   }
 
-  const { drafts } = await getCollections();
+  const collections = await getCollections();
+  const { drafts } = collections;
   const usedScheduleSlots = await listUsedScheduleSlots(profile.platform);
   let scheduled = 0;
 
@@ -3618,7 +3705,8 @@ export async function generateCreatorDrafts(input?: {
     throw new Error("AI did not return any draft.");
   }
 
-  const { drafts } = await getCollections();
+  const collections = await getCollections();
+  const { drafts } = collections;
   const createdDrafts: CreatorDraft[] = [];
 
   for (const generated of generatedDrafts.slice(0, count)) {
@@ -3634,6 +3722,20 @@ export async function generateCreatorDrafts(input?: {
       seoKeywordConfig
     );
     const caption = commerce.context ? stripSearchRelatedSuffix(baseCaption) : baseCaption;
+    const contentFingerprint = buildDraftContentFingerprint({
+      caption,
+      parts,
+      topic: topicForDraft
+    });
+    const duplicateDraft = await findDuplicateDraftContent(collections, {
+      platform,
+      fingerprint: contentFingerprint
+    });
+
+    if (duplicateDraft) {
+      continue;
+    }
+
     const visualPrompt = meta.requiresImage
       ? await composeBrandedVisualPrompt(
           platform,
@@ -3688,6 +3790,7 @@ export async function generateCreatorDrafts(input?: {
       approvalAttempts: 0,
       generationMode,
       generationSlotKey,
+      contentFingerprint,
       publishAttempts: 0,
       createdAt,
       updatedAt: createdAt
@@ -3766,9 +3869,57 @@ export async function publishCreatorDraft(
     throw new Error("Draft ini sudah dipublish.");
   }
 
-  const { drafts } = await getCollections();
+  const collections = await getCollections();
+  const { drafts } = collections;
   const attemptNumber = (document.publishAttempts ?? 0) + 1;
   const actionTime = now();
+  const contentFingerprint =
+    document.contentFingerprint ||
+    buildDraftContentFingerprint({
+      caption: document.caption,
+      parts: document.parts,
+      topic: document.topic
+    });
+  const postedDuplicate = await findDuplicateDraftContent(collections, {
+    platform: document.platform,
+    fingerprint: contentFingerprint,
+    excludeDraftId: document.draftId,
+    statuses: ["posted"]
+  });
+
+  if (postedDuplicate) {
+    const summary = `Publish skipped: duplicate content already posted by ${postedDuplicate.draftId}.`;
+    await drafts.updateOne(
+      { _id: document._id },
+      {
+        $set: {
+          status: "rejected",
+          rejectedAt: actionTime,
+          publishAttempts: attemptNumber,
+          contentFingerprint,
+          lastPublishSummary: summary,
+          updatedAt: actionTime
+        }
+      }
+    );
+    await logPublishOutcome({
+      draftId: document.draftId,
+      platform: document.platform,
+      provider: document.platform === "linkedin" ? "linkedin" : "meta",
+      status: "failed",
+      simulated: false,
+      targetLabel: document.publishTargetLabel,
+      summary,
+      error: summary
+    });
+
+    return {
+      success: false as const,
+      retryScheduled: false,
+      draft: mapDraft((await findDraftDocumentById(draftId)) as CreatorDraftDocument),
+      summary
+    };
+  }
 
   try {
     const result = await publishDraftToPlatform(getCreatorId(), mapDraft(document), {
