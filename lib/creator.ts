@@ -47,7 +47,8 @@ const creatorCollectionNames = {
   publishLogs: "creator_publish_logs",
   topicBriefs: "creator_topic_briefs",
   generationRetries: "creator_generation_retries",
-  generationLocks: "creator_generation_locks"
+  generationLocks: "creator_generation_locks",
+  publishLocks: "creator_publish_locks"
 } as const;
 
 const platformOrder: CreatorPlatform[] = ["threads", "instagram", "linkedin", "facebook"];
@@ -235,6 +236,15 @@ type CreatorGenerationLockDocument = {
   slotKey: string;
   slotLabel: string;
   slotTime: string;
+  createdAt: Date;
+  expiresAt: Date;
+};
+
+type CreatorPublishLockDocument = {
+  _id: string;
+  creatorId: string;
+  platform: CreatorPlatform;
+  draftId: string;
   createdAt: Date;
   expiresAt: Date;
 };
@@ -1643,7 +1653,8 @@ async function getCollections() {
     publishLogs: db.collection<CreatorPublishLogDocument>(creatorCollectionNames.publishLogs),
     topicBriefs: db.collection<CreatorTopicBriefDocument>(creatorCollectionNames.topicBriefs),
     generationRetries: db.collection<CreatorGenerationRetryDocument>(creatorCollectionNames.generationRetries),
-    generationLocks: db.collection<CreatorGenerationLockDocument>(creatorCollectionNames.generationLocks)
+    generationLocks: db.collection<CreatorGenerationLockDocument>(creatorCollectionNames.generationLocks),
+    publishLocks: db.collection<CreatorPublishLockDocument>(creatorCollectionNames.publishLocks)
   };
 }
 
@@ -1651,6 +1662,10 @@ type CreatorCollections = Awaited<ReturnType<typeof getCollections>>;
 
 function buildDraftGenerationLockId(creatorId: string, platform: CreatorPlatform, slotKey: string) {
   return `${creatorId}:${platform}:${slotKey}`;
+}
+
+function buildPublishLockId(creatorId: string, platform: CreatorPlatform, draftId: string) {
+  return `${creatorId}:${platform}:${draftId}`;
 }
 
 function isDuplicateKeyError(error: unknown) {
@@ -1722,6 +1737,59 @@ async function releaseDraftGenerationLock(
 ) {
   await collections.generationLocks.deleteOne({
     _id: buildDraftGenerationLockId(getCreatorId(), platform, slotKey)
+  });
+}
+
+async function tryAcquirePublishLock(
+  collections: CreatorCollections,
+  document: Pick<CreatorDraftDocument, "draftId" | "platform">
+) {
+  const lockId = buildPublishLockId(getCreatorId(), document.platform, document.draftId);
+  const timestamp = now();
+  const lockDocument: CreatorPublishLockDocument = {
+    _id: lockId,
+    creatorId: getCreatorId(),
+    platform: document.platform,
+    draftId: document.draftId,
+    createdAt: timestamp,
+    expiresAt: new Date(timestamp.getTime() + 10 * 60 * 1000)
+  };
+
+  try {
+    await collections.publishLocks.insertOne(lockDocument);
+    return true;
+  } catch (error) {
+    if (!isDuplicateKeyError(error)) {
+      throw error;
+    }
+  }
+
+  const existingLock = await collections.publishLocks.findOne({ _id: lockId });
+  if (!existingLock || existingLock.expiresAt.getTime() > Date.now()) {
+    return false;
+  }
+
+  await collections.publishLocks.deleteOne({ _id: lockId, expiresAt: { $lte: now() } });
+
+  try {
+    await collections.publishLocks.insertOne({
+      ...lockDocument,
+      createdAt: now(),
+      expiresAt: new Date(Date.now() + 10 * 60 * 1000)
+    });
+    return true;
+  } catch (error) {
+    if (isDuplicateKeyError(error)) {
+      return false;
+    }
+
+    throw error;
+  }
+}
+
+async function releasePublishLock(collections: CreatorCollections, document: Pick<CreatorDraftDocument, "draftId" | "platform">) {
+  await collections.publishLocks.deleteOne({
+    _id: buildPublishLockId(getCreatorId(), document.platform, document.draftId)
   });
 }
 
@@ -3886,18 +3954,45 @@ export async function publishCreatorDraft(
   const { drafts } = collections;
   const attemptNumber = (document.publishAttempts ?? 0) + 1;
   const actionTime = now();
+  const publishLockAcquired = await tryAcquirePublishLock(collections, document);
+
+  if (!publishLockAcquired) {
+    const summary = "Publish skipped: draft sedang diproses oleh request lain.";
+    return {
+      success: false as const,
+      retryScheduled: false,
+      draft: mapDraft(document),
+      summary
+    };
+  }
+
+  const lockedDocument = await drafts.findOne({ _id: document._id });
+  if (!lockedDocument || lockedDocument.status === "posted" || lockedDocument.status === "rejected") {
+    await releasePublishLock(collections, document);
+    const summary =
+      lockedDocument?.status === "posted"
+        ? "Publish skipped: draft sudah dipublish oleh request lain."
+        : "Publish skipped: draft sudah tidak valid untuk dipublish.";
+    return {
+      success: false as const,
+      retryScheduled: false,
+      draft: mapDraft((lockedDocument ?? document) as CreatorDraftDocument),
+      summary
+    };
+  }
+
   const contentFingerprint =
-    document.contentFingerprint ||
+    lockedDocument.contentFingerprint ||
     buildDraftContentFingerprint({
-      caption: document.caption,
-      parts: document.parts,
-      topic: document.topic
+      caption: lockedDocument.caption,
+      parts: lockedDocument.parts,
+      topic: lockedDocument.topic
     });
   const postedDuplicate = await findDuplicateDraftContent(collections, {
-    platform: document.platform,
+    platform: lockedDocument.platform,
     fingerprint: contentFingerprint,
-    topicFingerprint: buildDraftTopicFingerprint(document.topic),
-    excludeDraftId: document.draftId,
+    topicFingerprint: buildDraftTopicFingerprint(lockedDocument.topic),
+    excludeDraftId: lockedDocument.draftId,
     statuses: ["posted"]
   });
 
@@ -3917,15 +4012,16 @@ export async function publishCreatorDraft(
       }
     );
     await logPublishOutcome({
-      draftId: document.draftId,
-      platform: document.platform,
-      provider: document.platform === "linkedin" ? "linkedin" : "meta",
+      draftId: lockedDocument.draftId,
+      platform: lockedDocument.platform,
+      provider: lockedDocument.platform === "linkedin" ? "linkedin" : "meta",
       status: "failed",
       simulated: false,
-      targetLabel: document.publishTargetLabel,
+      targetLabel: lockedDocument.publishTargetLabel,
       summary,
       error: summary
     });
+    await releasePublishLock(collections, lockedDocument);
 
     return {
       success: false as const,
@@ -3936,12 +4032,12 @@ export async function publishCreatorDraft(
   }
 
   try {
-    const result = await publishDraftToPlatform(getCreatorId(), mapDraft(document), {
+    const result = await publishDraftToPlatform(getCreatorId(), mapDraft(lockedDocument), {
       appBaseUrl: options?.appBaseUrl
     });
 
     await drafts.updateOne(
-      { _id: document._id },
+      { _id: lockedDocument._id },
       {
         $set: {
           status: "posted",
@@ -3961,8 +4057,8 @@ export async function publishCreatorDraft(
     );
 
     await logPublishOutcome({
-      draftId: document.draftId,
-      platform: document.platform,
+      draftId: lockedDocument.draftId,
+      platform: lockedDocument.platform,
       provider: result.provider,
       status: "success",
       simulated: false,
@@ -3972,7 +4068,7 @@ export async function publishCreatorDraft(
       summary: result.summary
     });
 
-    await notifyApprovalPhoneOnPublishSuccess(document, result);
+    await notifyApprovalPhoneOnPublishSuccess(lockedDocument, result);
 
     return {
       success: true as const,
@@ -3988,7 +4084,7 @@ export async function publishCreatorDraft(
       : reason;
 
     await drafts.updateOne(
-      { _id: document._id },
+      { _id: lockedDocument._id },
       {
         $set: {
           status: willRetry ? "scheduled" : "failed",
@@ -4002,15 +4098,16 @@ export async function publishCreatorDraft(
     );
 
     await logPublishOutcome({
-      draftId: document.draftId,
-      platform: document.platform,
-      provider: document.platform === "linkedin" ? "linkedin" : "meta",
+      draftId: lockedDocument.draftId,
+      platform: lockedDocument.platform,
+      provider: lockedDocument.platform === "linkedin" ? "linkedin" : "meta",
       status: "failed",
       simulated: false,
-      targetLabel: document.publishTargetLabel,
+      targetLabel: lockedDocument.publishTargetLabel,
       summary: failureSummary,
       error: reason
     });
+    await releasePublishLock(collections, lockedDocument);
 
     return {
       success: false as const,
